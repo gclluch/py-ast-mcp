@@ -24,7 +24,9 @@ dependencies = ["mcp>=2.0.0"]
 
 [project.optional-dependencies]
 semantic = ["jedi>=0.19"]
-dev = ["pytest>=7.4", "jedi>=0.19"]
+# radon is the authority the complexity scores are advertised against, so the
+# parity test asks it directly rather than restating numbers that can drift.
+dev = ["pytest>=7.4", "jedi>=0.19", "radon>=6.0"]
 
 [project.scripts]
 py-ast-mcp = "py_ast_mcp.server:main"
