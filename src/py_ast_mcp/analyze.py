@@ -55,21 +55,12 @@ def _class_line(pm: ParsedModule, node: ast.ClassDef) -> str:
     return line
 
 
-def file_summary(pm: ParsedModule) -> list[str]:
+def _overview_lines(pm: ParsedModule, classes, funcs, imports) -> list[str]:
+    """Module docstring, counts, and `__all__`."""
     out: list[str] = []
     doc = ast.get_docstring(pm.tree)
     if doc:
         out.append(f'module doc: "{truncate(doc, 160)}"')
-
-    classes = [n for n in pm.tree.body if isinstance(n, ast.ClassDef)]
-    funcs = [
-        n
-        for n in pm.tree.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    imports = collect_imports(pm)
-    all_decl = dunder_all(pm)
-
     counts = {
         "lines": len(pm.lines),
         "imports": len(imports),
@@ -80,47 +71,65 @@ def file_summary(pm: ParsedModule) -> list[str]:
     out.append(
         "counts: " + ", ".join(f"{v} {k}" for k, v in counts.items() if v or k == "lines")
     )
+    all_decl = dunder_all(pm)
     if all_decl:
         out.append(f"__all__ (L{all_decl[1]}): {', '.join(all_decl[0]) or '(empty)'}")
+    return out
 
-    if imports:
-        out.append(section(f"imports ({len(imports)})"))
-        for r in imports[:60]:
-            out.append(bullet(f"[L{r.lineno}] {r.binding} <- {r.source}"))
-        if len(imports) > 60:
-            out.append(bullet(f"... {len(imports) - 60} more"))
 
-    if classes:
-        by_kind: dict[str, list[ast.ClassDef]] = {}
-        for c in classes:
-            by_kind.setdefault(class_kind_of(c), []).append(c)
-        out.append(section(f"classes ({len(classes)})"))
-        for kind in sorted(by_kind):
-            for c in by_kind[kind]:
-                out.append(bullet(_class_line(pm, c)))
-                for s in c.body:
-                    if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        fi = build_func_info(pm, s, c.name)
-                        tag = f" [{fi.kind}]" if fi.kind != "method" else ""
-                        out.append(
-                            bullet(
-                                f"[{loc(line=fi.lineno, end=fi.end_lineno)}] "
-                                f"{fi.signature()}{tag}",
-                                1,
-                            )
+def _imports_lines(imports) -> list[str]:
+    if not imports:
+        return []
+    out = [section(f"imports ({len(imports)})")]
+    for r in imports[:60]:
+        out.append(bullet(f"[L{r.lineno}] {r.binding} <- {r.source}"))
+    if len(imports) > 60:
+        out.append(bullet(f"... {len(imports) - 60} more"))
+    return out
+
+
+def _classes_lines(pm: ParsedModule, classes) -> list[str]:
+    """Classes grouped by kind, each followed by its methods."""
+    if not classes:
+        return []
+    by_kind: dict[str, list[ast.ClassDef]] = {}
+    for c in classes:
+        by_kind.setdefault(class_kind_of(c), []).append(c)
+    out = [section(f"classes ({len(classes)})")]
+    for kind in sorted(by_kind):
+        for c in by_kind[kind]:
+            out.append(bullet(_class_line(pm, c)))
+            for s in c.body:
+                if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    fi = build_func_info(pm, s, c.name)
+                    tag = f" [{fi.kind}]" if fi.kind != "method" else ""
+                    out.append(
+                        bullet(
+                            f"[{loc(line=fi.lineno, end=fi.end_lineno)}] "
+                            f"{fi.signature()}{tag}",
+                            1,
                         )
+                    )
+    return out
 
-    if funcs:
-        out.append(section(f"functions ({len(funcs)})"))
-        for f in funcs:
-            fi = build_func_info(pm, f)
-            line = f"[{loc(line=fi.lineno, end=fi.end_lineno)}] {fi.signature()}"
-            if fi.decorators:
-                line += f"  @{' @'.join(fi.decorators)}"
-            out.append(bullet(line))
-            if fi.docstring:
-                out.append(bullet(f'"{truncate(fi.docstring, 90)}"', 1))
 
+def _functions_lines(pm: ParsedModule, funcs) -> list[str]:
+    if not funcs:
+        return []
+    out = [section(f"functions ({len(funcs)})")]
+    for f in funcs:
+        fi = build_func_info(pm, f)
+        line = f"[{loc(line=fi.lineno, end=fi.end_lineno)}] {fi.signature()}"
+        if fi.decorators:
+            line += f"  @{' @'.join(fi.decorators)}"
+        out.append(bullet(line))
+        if fi.docstring:
+            out.append(bullet(f'"{truncate(fi.docstring, 90)}"', 1))
+    return out
+
+
+def _assignments_lines(pm: ParsedModule) -> list[str]:
+    """Module-level assignments, annotated or inferred, flagging type aliases."""
     assigns: list[str] = []
     for stmt in pm.tree.body:
         if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
@@ -137,10 +146,30 @@ def file_summary(pm: ParsedModule) -> list[str]:
                     )
         elif hasattr(ast, "TypeAlias") and isinstance(stmt, getattr(ast, "TypeAlias")):
             assigns.append(f"[{loc(stmt)}] {unparse(stmt.name)} [TypeAlias]")
-    if assigns:
-        out.append(section(f"module-level assignments ({len(assigns)})"))
-        out.extend(bullet(a) for a in assigns)
-    return out
+    if not assigns:
+        return []
+    return [
+        section(f"module-level assignments ({len(assigns)})"),
+        *(bullet(a) for a in assigns),
+    ]
+
+
+def file_summary(pm: ParsedModule) -> list[str]:
+    classes = [n for n in pm.tree.body if isinstance(n, ast.ClassDef)]
+    funcs = [
+        n
+        for n in pm.tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    imports = collect_imports(pm)
+
+    return [
+        *_overview_lines(pm, classes, funcs, imports),
+        *_imports_lines(imports),
+        *_classes_lines(pm, classes),
+        *_functions_lines(pm, funcs),
+        *_assignments_lines(pm),
+    ]
 
 
 def analyze_file(path: str) -> str:

@@ -94,28 +94,17 @@ def _diff_maps(
     return added, removed, changed
 
 
-def diff_ast(old_path: str, new_path: str) -> str:
-    old_pm = parse_file(old_path)
-    new_pm = parse_file(new_path)
-    a, b = snapshot(old_pm), snapshot(new_pm)
-
-    out = [header("diff_ast", f"{old_pm.path} -> {new_pm.path}")]
-    total_changes = 0
-
-    # functions
+def _functions_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
     added, removed, changed = _diff_maps(a.functions, b.functions)
+    both = set(a.functions) & set(b.functions)
     body_only = [
-        k
-        for k in set(a.functions) & set(b.functions)
+        k for k in both
         if k not in changed and a.func_bodies.get(k) != b.func_bodies.get(k)
     ]
     dec_changed = [
-        k
-        for k in set(a.functions) & set(b.functions)
-        if a.func_decorators.get(k) != b.func_decorators.get(k)
+        k for k in both if a.func_decorators.get(k) != b.func_decorators.get(k)
     ]
-    total_changes += len(added) + len(removed) + len(changed) + len(body_only)
-    out.append(section("functions"))
+    out = [section("functions")]
     if not (added or removed or changed or body_only or dec_changed):
         out.append("(unchanged)")
     for k in added:
@@ -132,16 +121,16 @@ def diff_ast(old_path: str, new_path: str) -> str:
         )
     for k in sorted(body_only):
         out.append(_line(f"~ {k}  body changed (same signature)  @L{b.func_lines[k]}"))
+    return out, len(added) + len(removed) + len(changed) + len(body_only)
 
-    # classes
+
+def _classes_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
     added, removed, changed = _diff_maps(a.classes, b.classes)
     base_changed = [
-        k
-        for k in set(a.classes) & set(b.classes)
+        k for k in set(a.classes) & set(b.classes)
         if a.class_bases.get(k) != b.class_bases.get(k)
     ]
-    total_changes += len(added) + len(removed) + len(changed) + len(base_changed)
-    out.append(section("classes"))
+    out = [section("classes")]
     if not (added or removed or changed or base_changed):
         out.append("(unchanged)")
     for k in added:
@@ -154,28 +143,31 @@ def diff_ast(old_path: str, new_path: str) -> str:
         out.append(
             _line(f"~ {k}  bases {a.class_bases[k] or '-'} -> {b.class_bases[k] or '-'}")
         )
+    return out, len(added) + len(removed) + len(changed) + len(base_changed)
 
-    # method-level detail per surviving class
-    method_notes: list[str] = []
+
+def _methods_section(a: Snapshot, b: Snapshot) -> list[str]:
+    """Per-class method changes, for classes present in both versions."""
+    notes: list[str] = []
     for cls in sorted(set(a.classes) & set(b.classes)):
         prefix = cls + "."
         old_m = {k[len(prefix):]: v for k, v in a.functions.items() if k.startswith(prefix)}
         new_m = {k[len(prefix):]: v for k, v in b.functions.items() if k.startswith(prefix)}
         ma, mr, mc = _diff_maps(old_m, new_m)
         for k in ma:
-            method_notes.append(f"+ {cls}.{k}  {new_m[k]}")
+            notes.append(f"+ {cls}.{k}  {new_m[k]}")
         for k in mr:
-            method_notes.append(f"- {cls}.{k}  {old_m[k]}")
+            notes.append(f"- {cls}.{k}  {old_m[k]}")
         for k in mc:
-            method_notes.append(f"~ {cls}.{k}  {old_m[k]}  ->  {new_m[k]}")
-    if method_notes:
-        out.append(section("methods"))
-        out.extend(_line(m) for m in method_notes)
+            notes.append(f"~ {cls}.{k}  {old_m[k]}  ->  {new_m[k]}")
+    if not notes:
+        return []
+    return [section("methods"), *(_line(m) for m in notes)]
 
-    # variables
+
+def _variables_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
     added, removed, changed = _diff_maps(a.variables, b.variables)
-    total_changes += len(added) + len(removed) + len(changed)
-    out.append(section("module variables"))
+    out = [section("module variables")]
     if not (added or removed or changed):
         out.append("(unchanged)")
     for k in added:
@@ -184,10 +176,13 @@ def diff_ast(old_path: str, new_path: str) -> str:
         out.append(_line(f"- {k}: {a.variables[k]}  @L{a.var_lines[k]}"))
     for k in changed:
         out.append(_line(f"~ {k}: {a.variables[k]} -> {b.variables[k]}"))
+    return out, len(added) + len(removed) + len(changed)
 
-    # imports
+
+def _imports_section(a: Snapshot, b: Snapshot) -> list[str]:
+    """Import changes. Deliberately not counted as structural changes."""
     added, removed, changed = _diff_maps(a.imports, b.imports)
-    out.append(section("imports"))
+    out = [section("imports")]
     if not (added or removed or changed):
         out.append("(unchanged)")
     for k in added:
@@ -196,19 +191,51 @@ def diff_ast(old_path: str, new_path: str) -> str:
         out.append(_line(f"- {k} <- {a.imports[k]}"))
     for k in changed:
         out.append(_line(f"~ {k}: {a.imports[k]} -> {b.imports[k]}"))
+    return out
 
-    if a.exports != b.exports:
-        out.append(section("__all__"))
-        for k in sorted(set(b.exports) - set(a.exports)):
-            out.append(_line(f"+ {k}"))
-        for k in sorted(set(a.exports) - set(b.exports)):
-            out.append(_line(f"- {k}"))
 
-    out.insert(1, f"structural changes: {total_changes}")
+def _exports_section(a: Snapshot, b: Snapshot) -> list[str]:
+    if a.exports == b.exports:
+        return []
+    out = [section("__all__")]
+    for k in sorted(set(b.exports) - set(a.exports)):
+        out.append(_line(f"+ {k}"))
+    for k in sorted(set(a.exports) - set(b.exports)):
+        out.append(_line(f"- {k}"))
+    return out
+
+
+def _breaking_section(a: Snapshot, b: Snapshot) -> list[str]:
+    """Public functions and classes that disappeared."""
     breaking = [
         k for k in set(a.functions) - set(b.functions) if not k.startswith("_")
     ] + [k for k in set(a.classes) - set(b.classes) if not k.startswith("_")]
-    if breaking:
-        out.append(section("potentially breaking (public symbols removed)"))
-        out.append(", ".join(sorted(breaking)))
+    if not breaking:
+        return []
+    return [
+        section("potentially breaking (public symbols removed)"),
+        ", ".join(sorted(breaking)),
+    ]
+
+
+def diff_ast(old_path: str, new_path: str) -> str:
+    old_pm = parse_file(old_path)
+    new_pm = parse_file(new_path)
+    a, b = snapshot(old_pm), snapshot(new_pm)
+
+    fn_lines, fn_n = _functions_section(a, b)
+    cls_lines, cls_n = _classes_section(a, b)
+    var_lines, var_n = _variables_section(a, b)
+
+    out = [
+        header("diff_ast", f"{old_pm.path} -> {new_pm.path}"),
+        f"structural changes: {fn_n + cls_n + var_n}",
+        *fn_lines,
+        *cls_lines,
+        *_methods_section(a, b),
+        *var_lines,
+        *_imports_section(a, b),
+        *_exports_section(a, b),
+        *_breaking_section(a, b),
+    ]
     return "\n".join(out)
