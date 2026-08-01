@@ -311,15 +311,17 @@ def dead_code(path: str, include_tests: bool = False) -> str:
 
 @mcp.tool()
 @_safe
-def find_implementations(path: str, protocol: str) -> str:
+def find_implementations(path: str, interface: str) -> str:
     """Find classes implementing a Protocol or ABC, both explicitly (as a base
     class, including indirect subclasses) and structurally (method-set match).
 
     Args:
         path: A .py file or directory; the containing directory is scanned.
-        protocol: Name of the Protocol/ABC/base class.
+        interface: Name of the Protocol/ABC/base class. Named `interface`
+            rather than `protocol` to match the identical tool in the
+            TypeScript server, so one vocabulary works across both.
     """
-    return _protocols.find_implementations(path, protocol)
+    return _protocols.find_implementations(path, interface)
 
 
 # --------------------------------------------------------------------------

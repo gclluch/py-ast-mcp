@@ -150,7 +150,7 @@ def main() -> int:
         ),
         (
             "find_implementations",
-            {"path": str(FIX / "samplepkg" / "core.py"), "protocol": "Serializer"},
+            {"path": str(FIX / "samplepkg" / "core.py"), "interface": "Serializer"},
             "JsonSerializer",
         ),
         (
