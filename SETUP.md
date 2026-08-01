@@ -15,14 +15,14 @@ degrades gracefully without it):
 
 ## 2. Wire into Claude Code
 
-A `.mcp.json` has already been dropped into `~/projects/health-access-map`.
-To use it anywhere else, add this to that repo's `.mcp.json`:
+To use the server in a project, add this to that repo's `.mcp.json`
+(replace `/path/to/py-ast-mcp` with wherever you cloned it):
 
     {
       "mcpServers": {
         "py-ast": {
           "command": "uv",
-          "args": ["run", "--directory", "/Users/gabriellluch/projects/py-ast-mcp", "py-ast-mcp"]
+          "args": ["run", "--directory", "/path/to/py-ast-mcp", "py-ast-mcp"]
         }
       }
     }
@@ -31,7 +31,7 @@ Then `claude` in that directory and run `/mcp` to confirm `py-ast` connected.
 
 To make it global instead of per-repo:
 
-    claude mcp add py-ast -s user -- uv run --directory /Users/gabriellluch/projects/py-ast-mcp py-ast-mcp
+    claude mcp add py-ast -s user -- uv run --directory /path/to/py-ast-mcp py-ast-mcp
 
 ## 3. Verify
 

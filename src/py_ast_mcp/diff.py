@@ -41,8 +41,11 @@ def _body_fingerprint(node: ast.AST) -> str:
             annotate_fields=False,
             include_attributes=False,
         )
-    except Exception:  # pragma: no cover - defensive
-        return ""
+    except Exception:
+        # Never return a constant here: two nodes that both fail to round-trip
+        # would compare equal and be reported as "unchanged". Dumping the
+        # original node still fingerprints the body, just less canonically.
+        return ast.dump(node, annotate_fields=False, include_attributes=False)
 
 
 def _var_repr(value) -> str:
