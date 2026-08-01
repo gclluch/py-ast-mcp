@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
+from mcp.client import Client
 
 from py_ast_mcp.server import mcp
 
@@ -37,6 +38,22 @@ def _tools():
 
 def _call(tool_name, /, **kwargs) -> str:
     result = asyncio.run(mcp.call_tool(tool_name, kwargs))
+    return "\n".join(getattr(b, "text", str(b)) for b in result.content)
+
+
+async def _dispatch(tool_name, arguments):
+    """Call a tool the way a real client does, so `is_error` is observable.
+
+    `mcp.call_tool` lets exceptions escape; only the request handler maps them
+    onto `CallToolResult.is_error`, which is the contract under test.
+    """
+    async with Client(mcp) as client:
+        return await client.call_tool(tool_name, arguments)
+
+
+def _call_expecting_error(tool_name, /, **kwargs) -> str:
+    result = asyncio.run(_dispatch(tool_name, kwargs))
+    assert result.is_error, f"{tool_name} reported failure as success"
     return "\n".join(getattr(b, "text", str(b)) for b in result.content)
 
 
@@ -80,21 +97,34 @@ def test_call_tool_dead_code(pkg):
     assert "_unused_private" in out
 
 
-def test_syntax_error_returns_message_not_exception(broken):
-    out = _call("analyze_file", path=broken)
-    assert out.startswith("ERROR: cannot parse")
-    assert "line 1" in out
+def test_syntax_error_is_flagged_as_an_error(broken):
+    text = _call_expecting_error("analyze_file", path=broken)
+    assert "ERROR: cannot parse" in text
+    assert "line 1" in text
 
 
-def test_missing_file_returns_error_string(tmp_path):
-    out = _call("analyze_file", path=str(tmp_path / "nope.py"))
-    assert out.startswith("ERROR:")
-    assert "File not found" in out
+def test_missing_file_is_flagged_as_an_error(tmp_path):
+    text = _call_expecting_error("analyze_file", path=str(tmp_path / "nope.py"))
+    assert "ERROR:" in text
+    assert "File not found" in text
 
 
-def test_unknown_symbol_returns_error_string(sample):
-    out = _call("get_function_body", path=sample, name="not_a_function")
-    assert out.startswith("ERROR:")
+def test_unknown_symbol_is_flagged_as_an_error(sample):
+    text = _call_expecting_error(
+        "get_function_body", path=sample, name="not_a_function"
+    )
+    assert "ERROR:" in text
+
+
+def test_failure_does_not_leak_a_traceback(broken):
+    text = _call_expecting_error("analyze_file", path=broken)
+    assert "Traceback" not in text
+    assert 'File "' not in text
+
+
+def test_success_is_not_flagged_as_an_error(sample):
+    result = asyncio.run(_dispatch("analyze_file", {"path": sample}))
+    assert result.is_error is False
 
 
 def test_server_has_instructions():

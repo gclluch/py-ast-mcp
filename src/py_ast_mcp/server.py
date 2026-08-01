@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import functools
-import traceback
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 from mcp.server.mcpserver import MCPServer
 
@@ -24,7 +24,7 @@ from . import types as _types
 from . import usages as _usages
 from .parse import AstToolError, ParseError
 
-__all__ = ["mcp", "main", "create_server"]
+__all__ = ["mcp", "main", "create_server", "ToolFailure"]
 
 INSTRUCTIONS = """\
 py-ast-mcp performs structural analysis of Python source using the stdlib `ast`
@@ -37,31 +37,42 @@ annotated text with line numbers; paths may be absolute or relative to the
 server's working directory.
 """
 
-mcp: MCPServer = MCPServer(
-    "py-ast-mcp", instructions=INSTRUCTIONS, version=__version__
-)
+mcp: MCPServer = MCPServer("py-ast-mcp", instructions=INSTRUCTIONS, version=__version__)
 
 F = TypeVar("F", bound=Callable[..., str])
 
 
+class ToolFailure(Exception):
+    """A tool failure carrying an already-rendered, user-facing message.
+
+    Raised rather than returned: the MCP server turns any exception escaping a
+    tool into a `CallToolResult` with `is_error=True`, which is what lets a
+    client tell "this file does not parse" apart from a successful analysis.
+    Returning the message as a normal string reports failure as success.
+    """
+
+
 def _safe(fn: F) -> F:
-    """Never let a tool crash the server; return readable errors instead."""
+    """Convert internal errors into readable `ToolFailure`s.
+
+    Raw tracebacks are not sent to the client; `raise ... from exc` keeps the
+    original for server-side logs.
+    """
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):  # type: ignore[no-untyped-def]
         try:
             return fn(*args, **kwargs)
         except ParseError as exc:
-            return exc.render()
+            raise ToolFailure(exc.render()) from exc
         except AstToolError as exc:
-            return f"ERROR: {exc}"
-        except RecursionError:
-            return "ERROR: file is too deeply nested for the AST walker"
+            raise ToolFailure(f"ERROR: {exc}") from exc
+        except RecursionError as exc:
+            raise ToolFailure(
+                "ERROR: file is too deeply nested for the AST walker"
+            ) from exc
         except Exception as exc:  # pragma: no cover - defensive
-            return (
-                f"ERROR: unexpected {type(exc).__name__}: {exc}\n"
-                + "".join(traceback.format_exc(limit=4))
-            )
+            raise ToolFailure(f"ERROR: unexpected {type(exc).__name__}: {exc}") from exc
 
     return wrapper  # type: ignore[return-value]
 
