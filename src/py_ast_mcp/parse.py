@@ -8,7 +8,6 @@ single agent turn are cheap.
 from __future__ import annotations
 
 import ast
-import os
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,10 +156,6 @@ class ParsedModule:
         return "\n".join(
             f"{indent}{i:>{width}} | {self.lines[i - 1]}" for i in range(start, end + 1)
         )
-
-    @property
-    def module_name(self) -> str:
-        return Path(self.path).stem
 
 
 _CACHE: dict[str, ParsedModule] = {}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator, Sequence
 
 from .format import bullet, empty, header, loc, plural, section, truncate, unparse

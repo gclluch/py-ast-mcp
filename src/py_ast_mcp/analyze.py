@@ -7,7 +7,6 @@ from pathlib import Path
 
 from .format import (
     bullet,
-    empty,
     header,
     loc,
     plural,

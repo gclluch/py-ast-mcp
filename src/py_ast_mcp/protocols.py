@@ -6,7 +6,7 @@ import ast
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .format import bullet, header, loc, plural, section, unparse
+from .format import bullet, header, section, unparse
 from .parse import (
     AstToolError,
     ParseError,

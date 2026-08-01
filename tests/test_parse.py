@@ -104,7 +104,7 @@ def test_is_test_filename():
 
 def test_parse_source_roundtrip():
     pm = parse_source("def f():\n    return 1\n", "mem.py")
-    assert pm.module_name == "mem"
+    assert pm.path == "mem.py"
     assert len(pm.lines) == 2
 
 

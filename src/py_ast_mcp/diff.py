@@ -5,8 +5,8 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 
-from .format import header, plural, section, truncate, unparse
-from .functions import FuncInfo, collect_functions
+from .format import header, section, truncate, unparse
+from .functions import collect_functions
 from .imports import collect_imports, dunder_all
 from .parse import ParsedModule, parse_file
 from .types import class_kind_of, infer_literal_type

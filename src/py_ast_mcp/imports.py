@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import sys
 
-from .format import bullet, empty, header, loc, plural, section, truncate, unparse
+from .format import bullet, empty, header, loc, plural, section, unparse
 from .parse import ParsedModule, parse_file
 from .types import class_kind_of
 

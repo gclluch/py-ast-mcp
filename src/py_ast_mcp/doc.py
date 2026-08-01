@@ -7,7 +7,7 @@ import re
 import textwrap
 from dataclasses import dataclass, field
 
-from .format import bullet, header, loc, section, truncate
+from .format import bullet, header, loc, section
 from .functions import build_func_info, find_function
 from .parse import AstToolError, ParsedModule, parse_file
 

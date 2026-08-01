@@ -6,7 +6,7 @@ import ast
 from dataclasses import dataclass, field
 
 from .format import bullet, empty, header, loc, section, table
-from .functions import FuncInfo, collect_functions, find_function
+from .functions import collect_functions, find_function
 from .parse import parse_file
 
 __all__ = ["complexity_of", "code_complexity", "ComplexityResult", "rank_of"]

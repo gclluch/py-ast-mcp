@@ -18,7 +18,6 @@ from . import doc as _doc
 from . import errors as _errors
 from . import functions as _functions
 from . import imports as _imports
-from . import jedi_support
 from . import protocols as _protocols
 from . import smells as _smells
 from . import types as _types

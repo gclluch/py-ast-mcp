@@ -7,8 +7,8 @@ import builtins
 from dataclasses import dataclass
 
 from .complexity import complexity_of
-from .format import bullet, header, loc, plural, section, truncate, unparse
-from .functions import FuncInfo, collect_functions, decorator_names, find_function
+from .format import bullet, header, plural, section, truncate, unparse
+from .functions import FuncInfo, collect_functions, find_function
 from .parse import ParsedModule, parse_file
 
 __all__ = ["Finding", "code_smells", "collect_smells"]
@@ -240,9 +240,6 @@ def collect_smells(pm: ParsedModule, function: str | None = None) -> list[Findin
 
     findings.sort(key=lambda f: (f.lineno, f.kind))
     return findings
-
-
-_SEVERITY_ORDER = {"error": 0, "warn": 1, "info": 2}
 
 
 def code_smells(path: str, function: str | None = None) -> str:

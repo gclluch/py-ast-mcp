@@ -163,7 +163,6 @@ def test_diff_ast_breaking_section(old_version, new_version):
 
 
 def test_find_node_at_position_identifies_call(sample):
-    import re
     from pathlib import Path
 
     src = Path(sample).read_text().splitlines()
