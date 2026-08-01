@@ -23,7 +23,7 @@ def test_infer_at_resolves_cross_file(pkg_core):
 
     src = Path(pkg_core).read_text()
     line = next(
-        i + 1 for i, l in enumerate(src.splitlines()) if "engine.store(key" in l
+        i + 1 for i, text in enumerate(src.splitlines()) if "engine.store(key" in text
     )
     col = src.splitlines()[line - 1].index("store")
     results = jedi_support.infer_at(pkg_core, src, line, col)
@@ -35,7 +35,7 @@ def test_find_node_at_position_includes_jedi_section(pkg_core):
     from pathlib import Path
 
     src = Path(pkg_core).read_text().splitlines()
-    line = next(i + 1 for i, l in enumerate(src) if "engine.store(key" in l)
+    line = next(i + 1 for i, text in enumerate(src) if "engine.store(key" in text)
     col = src[line - 1].index("store")
     out = find_node_at_position(pkg_core, line, col)
     assert "semantic resolution (jedi)" in out
@@ -88,7 +88,9 @@ def test_references_reach_sibling_directory(nested_deep):
 
     src = Path(nested_deep).read_text()
     line = next(
-        i + 1 for i, l in enumerate(src.splitlines()) if l.startswith("def deep_helper")
+        i + 1
+        for i, text in enumerate(src.splitlines())
+        if text.startswith("def deep_helper")
     )
     col = src.splitlines()[line - 1].index("deep_helper")
     refs = jedi_support.references(nested_deep, src, line, col)

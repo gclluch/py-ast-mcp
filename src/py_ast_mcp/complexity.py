@@ -109,7 +109,7 @@ def complexity_of(node: ast.AST, skip_nested_defs: bool = False) -> ComplexityRe
                     bump("comprehension")
                     bump("comprehension if", len(gen.ifs))
                 nested = depth + 1
-            elif hasattr(ast, "Match") and isinstance(child, getattr(ast, "Match")):
+            elif hasattr(ast, "Match") and isinstance(child, ast.Match):
                 bump("match case", len(child.cases))
                 nested = depth + 1
             walk(child, nested)

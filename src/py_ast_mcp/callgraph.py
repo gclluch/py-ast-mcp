@@ -11,8 +11,8 @@ from .functions import FuncInfo, collect_functions
 from .imports import collect_imports
 from .parse import (
     AstToolError,
-    ParseError,
     ParsedModule,
+    ParseError,
     containing_dir,
     iter_py_files,
     parse_file,
@@ -59,9 +59,7 @@ def _module_key(path: str, base: Path | None) -> str:
     return p.stem
 
 
-def _index_module(
-    pm: ParsedModule, prefix: str, graph: CallGraph
-) -> dict[str, str]:
+def _index_module(pm: ParsedModule, prefix: str, graph: CallGraph) -> dict[str, str]:
     """Register every function of ``pm`` and return local-name -> node-id map."""
     local: dict[str, str] = {}
     for fi in collect_functions(pm):
@@ -119,7 +117,13 @@ class _CallVisitor(ast.NodeVisitor):
 
     # call handling -------------------------------------------------------
     def visit_Call(self, node: ast.Call) -> None:
-        caller = self.stack[-1] if self.stack else f"{self.prefix}:<module>" if self.prefix else "<module>"
+        caller = (
+            self.stack[-1]
+            if self.stack
+            else f"{self.prefix}:<module>"
+            if self.prefix
+            else "<module>"
+        )
         target, external = self._resolve(node.func)
         if target:
             self.graph.edges.append(Edge(caller, target, node.lineno, external))
@@ -180,7 +184,9 @@ class _CallVisitor(ast.NodeVisitor):
         return (text or None), True
 
 
-def build_graph(path: str, scope: str = "file", include_tests: bool = False) -> CallGraph:
+def build_graph(
+    path: str, scope: str = "file", include_tests: bool = False
+) -> CallGraph:
     graph = CallGraph()
     if scope == "package":
         root = containing_dir(path)
@@ -258,7 +264,9 @@ def _resolve_start(graph: CallGraph, function: str) -> str:
     matches = [
         nid
         for nid, fi in graph.nodes.items()
-        if fi.qualname == function or fi.name == function or nid.endswith(":" + function)
+        if fi.qualname == function
+        or fi.name == function
+        or nid.endswith(":" + function)
     ]
     if not matches:
         raise AstToolError(
@@ -416,9 +424,7 @@ def get_callers(path: str, function: str, scope: str = "file") -> str:
         out.append(section(f"transitive callers ({len(indirect)})"))
         for n in sorted(indirect):
             out.append(bullet(n.split(":", 1)[-1]))
-    roots = [
-        n for n in upstream if not graph.in_edges(n) and n in graph.nodes
-    ]
+    roots = [n for n in upstream if not graph.in_edges(n) and n in graph.nodes]
     if roots:
         out.append(section("entry points reaching it"))
         out.append(", ".join(sorted(r.split(":", 1)[-1] for r in roots)))

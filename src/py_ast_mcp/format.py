@@ -7,8 +7,8 @@ dense, scannable plain text with line numbers everywhere -- not JSON dumps.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 __all__ = [
     "header",

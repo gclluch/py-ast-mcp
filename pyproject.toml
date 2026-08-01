@@ -36,6 +36,17 @@ Issues = "https://github.com/gclluch/py-ast-mcp/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.ruff]
+# Fixtures are inputs, not source: broken.py must not parse, and the others are
+# pinned to exact line numbers by the tests. Formatting them breaks both.
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# `ruff format` owns line length; the only lines left over are strings it
+# cannot split, so E501 would just be noise the formatter can't resolve.
+ignore = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

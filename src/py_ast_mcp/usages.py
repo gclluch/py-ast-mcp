@@ -51,7 +51,10 @@ def collect_usages(pm: ParsedModule, identifier: str) -> list[Usage]:
             add(node, role)
         elif isinstance(node, ast.Attribute) and node.attr == identifier:
             add(node, "attribute access")
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == identifier:
+        elif (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == identifier
+        ):
             add(node, "function definition")
         elif isinstance(node, ast.ClassDef) and node.name == identifier:
             add(node, "class definition")
@@ -59,7 +62,10 @@ def collect_usages(pm: ParsedModule, identifier: str) -> list[Usage]:
             add(node, "parameter")
         elif isinstance(node, ast.keyword) and node.arg == identifier:
             add(node, "keyword argument")
-        elif isinstance(node, ast.alias) and (node.asname or node.name.split(".")[0]) == identifier:
+        elif (
+            isinstance(node, ast.alias)
+            and (node.asname or node.name.split(".")[0]) == identifier
+        ):
             add(node, "import binding")
         elif isinstance(node, ast.Global) and identifier in node.names:
             add(node, "global declaration")
@@ -75,9 +81,7 @@ def find_usages(path: str, identifier: str, context: int = 1) -> str:
     pm = parse_file(path)
     usages = collect_usages(pm, identifier)
     out = [
-        header(
-            f"usages of '{identifier}'", pm.path, plural(len(usages), "occurrence")
-        )
+        header(f"usages of '{identifier}'", pm.path, plural(len(usages), "occurrence"))
     ]
     if not usages:
         out.append(

@@ -39,7 +39,11 @@ class ImportRec:
     def source(self) -> str:
         dots = "." * self.level
         if self.is_from:
-            return f"{dots}{self.module}.{self.name}" if self.module else f"{dots}{self.name}"
+            return (
+                f"{dots}{self.module}.{self.name}"
+                if self.module
+                else f"{dots}{self.name}"
+            )
         return self.module
 
     @property
@@ -139,9 +143,17 @@ def list_exports(path: str) -> str:
     defined: dict[str, tuple[str, int, int]] = {}
     for stmt in pm.tree.body:
         if isinstance(stmt, ast.ClassDef):
-            defined[stmt.name] = (class_kind_of(stmt), stmt.lineno, stmt.end_lineno or stmt.lineno)
+            defined[stmt.name] = (
+                class_kind_of(stmt),
+                stmt.lineno,
+                stmt.end_lineno or stmt.lineno,
+            )
         elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            kind = "async function" if isinstance(stmt, ast.AsyncFunctionDef) else "function"
+            kind = (
+                "async function"
+                if isinstance(stmt, ast.AsyncFunctionDef)
+                else "function"
+            )
             defined[stmt.name] = (kind, stmt.lineno, stmt.end_lineno or stmt.lineno)
         elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
             defined[stmt.target.id] = ("variable", stmt.lineno, stmt.lineno)
@@ -153,13 +165,15 @@ def list_exports(path: str) -> str:
                     for e in t.elts:
                         if isinstance(e, ast.Name):
                             defined[e.id] = ("variable", stmt.lineno, stmt.lineno)
-        elif hasattr(ast, "TypeAlias") and isinstance(stmt, getattr(ast, "TypeAlias")):
+        elif hasattr(ast, "TypeAlias") and isinstance(stmt, ast.TypeAlias):
             defined[unparse(stmt.name)] = ("type alias", stmt.lineno, stmt.lineno)
 
     out: list[str] = []
     if all_decl is not None:
         names, lineno = all_decl
-        out.append(header("exports", pm.path, f"__all__ at L{lineno}, {len(names)} names"))
+        out.append(
+            header("exports", pm.path, f"__all__ at L{lineno}, {len(names)} names")
+        )
         out.append(section("__all__"))
         for n in names:
             if n in defined:
@@ -170,11 +184,7 @@ def list_exports(path: str) -> str:
                 out.append(bullet(f"[L{r.lineno}] {n}  (re-export from {r.source})"))
             else:
                 out.append(bullet(f"{n}  (!! listed in __all__ but not defined here)"))
-        extra = [
-            n
-            for n in defined
-            if not n.startswith("_") and n not in names
-        ]
+        extra = [n for n in defined if not n.startswith("_") and n not in names]
         if extra:
             out.append(section(f"public but not in __all__ ({len(extra)})"))
             for n in sorted(extra, key=lambda x: defined[x][1]):
@@ -187,9 +197,7 @@ def list_exports(path: str) -> str:
         n: r for n, r in imported.items() if not n.startswith("_") and n not in defined
     }
     total = len(public_defined) + len(reexports)
-    out.append(
-        header("exports", pm.path, f"no __all__; {total} implicit public names")
-    )
+    out.append(header("exports", pm.path, f"no __all__; {total} implicit public names"))
     if public_defined:
         out.append(section(f"defined here ({len(public_defined)})"))
         for n in sorted(public_defined, key=lambda x: public_defined[x][1]):

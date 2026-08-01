@@ -11,7 +11,6 @@ from py_ast_mcp.parse import AstToolError, parse_file
 from py_ast_mcp.protocols import find_implementations
 from py_ast_mcp.smells import code_smells, collect_smells
 
-
 # --- code_complexity ------------------------------------------------------
 
 
@@ -71,7 +70,11 @@ changes, we have drifted away from the standard metric."""
 RADON_PARITY = [
     ("if only", "def f(x):\n if x: return 1\n return 0\n", 2),
     ("if/else", "def f(x):\n if x: return 1\n else: return 0\n", 2),
-    ("if/elif/else", "def f(x):\n if x: return 1\n elif x>2: return 2\n else: return 0\n", 3),
+    (
+        "if/elif/else",
+        "def f(x):\n if x: return 1\n elif x>2: return 2\n else: return 0\n",
+        3,
+    ),
     ("for", "def f(x):\n for i in x: print(i)\n", 2),
     ("for/else", "def f(x):\n for i in x: print(i)\n else: print('d')\n", 3),
     ("while", "def f(x):\n while x: x-=1\n", 2),
@@ -86,12 +89,18 @@ RADON_PARITY = [
     ("comp no if", "def f(x):\n return [i for i in x]\n", 2),
     ("comp with if", "def f(x):\n return [i for i in x if i]\n", 3),
     ("lambda", "def f(x):\n g = lambda y: y+1\n return g(x)\n", 1),
-    ("nested def+if", "def f(x):\n def g(y):\n  if y: return 1\n  return 0\n return g(x)\n", 1),
+    (
+        "nested def+if",
+        "def f(x):\n def g(y):\n  if y: return 1\n  return 0\n return g(x)\n",
+        1,
+    ),
 ]
 
 
 @pytest.mark.parametrize(
-    "code,expected", [(c, e) for _, c, e in RADON_PARITY], ids=[n for n, _, _ in RADON_PARITY]
+    "code,expected",
+    [(c, e) for _, c, e in RADON_PARITY],
+    ids=[n for n, _, _ in RADON_PARITY],
 )
 def test_complexity_matches_radon(code, expected):
     from py_ast_mcp.complexity import complexity_of

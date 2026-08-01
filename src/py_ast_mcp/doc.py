@@ -70,7 +70,9 @@ def _detect_style(lines: list[str]) -> str:
     return "plain"
 
 
-def _split_sections(lines: list[str], style: str) -> tuple[list[str], dict[str, list[str]]]:
+def _split_sections(
+    lines: list[str], style: str
+) -> tuple[list[str], dict[str, list[str]]]:
     head: list[str] = []
     sections: dict[str, list[str]] = {}
     current: str | None = None
@@ -221,7 +223,9 @@ def get_doc(path: str, name: str) -> str:
 
     if kind in ("function", "method"):
         fi = build_func_info(
-            pm, node, node_class(pm, node)  # type: ignore[arg-type]
+            pm,
+            node,
+            node_class(pm, node),  # type: ignore[arg-type]
         )
         out.append(fi.signature(qualified=True))
     elif kind == "class" and isinstance(node, ast.ClassDef):

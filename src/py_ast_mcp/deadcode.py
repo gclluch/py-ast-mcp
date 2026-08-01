@@ -10,8 +10,8 @@ from .format import bullet, header, plural, section, table
 from .imports import dunder_all
 from .parse import (
     AstToolError,
-    ParseError,
     ParsedModule,
+    ParseError,
     containing_dir,
     iter_py_files,
     parse_file,
@@ -54,7 +54,9 @@ def collect_defs(pm: ParsedModule) -> list[Definition]:
         exported = set(all_decl[0])
     out: list[Definition] = []
 
-    def add(name: str, kind: str, node: ast.AST, decorators: list[str] | None = None) -> None:
+    def add(
+        name: str, kind: str, node: ast.AST, decorators: list[str] | None = None
+    ) -> None:
         out.append(
             Definition(
                 name=name,
@@ -72,7 +74,9 @@ def collect_defs(pm: ParsedModule) -> list[Definition]:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             add(
                 stmt.name,
-                "async function" if isinstance(stmt, ast.AsyncFunctionDef) else "function",
+                "async function"
+                if isinstance(stmt, ast.AsyncFunctionDef)
+                else "function",
                 stmt,
                 [ast.unparse(d) for d in stmt.decorator_list],
             )

@@ -9,8 +9,8 @@ from pathlib import Path
 from .format import bullet, header, section, unparse
 from .parse import (
     AstToolError,
-    ParseError,
     ParsedModule,
+    ParseError,
     containing_dir,
     iter_py_files,
     parse_file,
@@ -99,6 +99,7 @@ def find_implementations(path: str, protocol: str) -> str:
 
     # transitive explicit subclasses
     by_name = {r.name: r for r in records}
+
     def bases_of(rec: ClassRec) -> set[str]:
         return {b.split("[")[0].split(".")[-1] for b in rec.bases}
 
@@ -164,7 +165,9 @@ def find_implementations(path: str, protocol: str) -> str:
 
     out.append(section(f"structural ({len(structural)})"))
     if structural:
-        for r, members in sorted(structural, key=lambda x: (x[0].file, x[0].node.lineno)):
+        for r, members in sorted(
+            structural, key=lambda x: (x[0].file, x[0].node.lineno)
+        ):
             out.append(
                 bullet(
                     f"{Path(r.file).name}:{r.node.lineno} {r.name} "
@@ -176,7 +179,7 @@ def find_implementations(path: str, protocol: str) -> str:
 
     if partial:
         out.append(section(f"near misses ({len(partial)})"))
-        for r, have, missing in sorted(partial, key=lambda x: x[0].name):
+        for r, _have, missing in sorted(partial, key=lambda x: x[0].name):
             out.append(
                 bullet(
                     f"{Path(r.file).name}:{r.node.lineno} {r.name} "

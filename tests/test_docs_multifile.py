@@ -9,7 +9,6 @@ from py_ast_mcp.diff import diff_ast
 from py_ast_mcp.doc import get_doc, parse_docstring
 from py_ast_mcp.parse import AstToolError
 
-
 # --- get_doc --------------------------------------------------------------
 
 
@@ -166,7 +165,11 @@ def test_find_node_at_position_identifies_call(sample):
     from pathlib import Path
 
     src = Path(sample).read_text().splitlines()
-    line = next(i + 1 for i, l in enumerate(src) if "return inner(n) + helpers.double" in l)
+    line = next(
+        i + 1
+        for i, text in enumerate(src)
+        if "return inner(n) + helpers.double" in text
+    )
     col = src[line - 1].index("inner(")
     out = find_node_at_position(sample, line, col)
     assert "innermost node" in out
@@ -179,7 +182,7 @@ def test_find_node_at_position_in_method_scope(sample):
     from pathlib import Path
 
     src = Path(sample).read_text().splitlines()
-    line = next(i + 1 for i, l in enumerate(src) if "match score:" in l)
+    line = next(i + 1 for i, text in enumerate(src) if "match score:" in text)
     col = src[line - 1].index("score")
     out = find_node_at_position(sample, line, col)
     assert "Widget.classify" in out
@@ -195,6 +198,6 @@ def test_find_node_at_position_on_blank(sample):
     from pathlib import Path
 
     src = Path(sample).read_text().splitlines()
-    line = next(i + 1 for i, l in enumerate(src) if not l.strip())
+    line = next(i + 1 for i, text in enumerate(src) if not text.strip())
     out = find_node_at_position(sample, line, 0)
     assert "No AST node covers" in out or "innermost node" in out

@@ -37,7 +37,9 @@ class Snapshot:
 def _body_fingerprint(node: ast.AST) -> str:
     try:
         return ast.dump(
-            ast.parse(ast.unparse(node)), annotate_fields=False, include_attributes=False
+            ast.parse(ast.unparse(node)),
+            annotate_fields=False,
+            include_attributes=False,
         )
     except Exception:  # pragma: no cover - defensive
         return ""
@@ -98,7 +100,8 @@ def _functions_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
     added, removed, changed = _diff_maps(a.functions, b.functions)
     both = set(a.functions) & set(b.functions)
     body_only = [
-        k for k in both
+        k
+        for k in both
         if k not in changed and a.func_bodies.get(k) != b.func_bodies.get(k)
     ]
     dec_changed = [
@@ -127,7 +130,8 @@ def _functions_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
 def _classes_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
     added, removed, changed = _diff_maps(a.classes, b.classes)
     base_changed = [
-        k for k in set(a.classes) & set(b.classes)
+        k
+        for k in set(a.classes) & set(b.classes)
         if a.class_bases.get(k) != b.class_bases.get(k)
     ]
     out = [section("classes")]
@@ -141,7 +145,9 @@ def _classes_section(a: Snapshot, b: Snapshot) -> tuple[list[str], int]:
         out.append(_line(f"~ {k}  kind {a.classes[k]} -> {b.classes[k]}"))
     for k in base_changed:
         out.append(
-            _line(f"~ {k}  bases {a.class_bases[k] or '-'} -> {b.class_bases[k] or '-'}")
+            _line(
+                f"~ {k}  bases {a.class_bases[k] or '-'} -> {b.class_bases[k] or '-'}"
+            )
         )
     return out, len(added) + len(removed) + len(changed) + len(base_changed)
 
@@ -151,8 +157,12 @@ def _methods_section(a: Snapshot, b: Snapshot) -> list[str]:
     notes: list[str] = []
     for cls in sorted(set(a.classes) & set(b.classes)):
         prefix = cls + "."
-        old_m = {k[len(prefix):]: v for k, v in a.functions.items() if k.startswith(prefix)}
-        new_m = {k[len(prefix):]: v for k, v in b.functions.items() if k.startswith(prefix)}
+        old_m = {
+            k[len(prefix) :]: v for k, v in a.functions.items() if k.startswith(prefix)
+        }
+        new_m = {
+            k[len(prefix) :]: v for k, v in b.functions.items() if k.startswith(prefix)
+        }
         ma, mr, mc = _diff_maps(old_m, new_m)
         for k in ma:
             notes.append(f"+ {cls}.{k}  {new_m[k]}")

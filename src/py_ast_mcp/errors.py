@@ -42,7 +42,9 @@ def _async_defs(pm: ParsedModule) -> dict[str, FuncInfo]:
 
 def _loads(node: ast.AST) -> set[str]:
     return {
-        n.id for n in ast.walk(node) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        n.id
+        for n in ast.walk(node)
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
     }
 
 
@@ -75,11 +77,16 @@ def _exception_handling(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
             continue
         where = _scope_of(pm, h)
         if h.type is None:
-            out.append(_f(
-                "bare-except", h, where,
-                "bare 'except:' also swallows KeyboardInterrupt and SystemExit",
-                "error", "use 'except Exception:' at minimum, ideally a specific type",
-            ))
+            out.append(
+                _f(
+                    "bare-except",
+                    h,
+                    where,
+                    "bare 'except:' also swallows KeyboardInterrupt and SystemExit",
+                    "error",
+                    "use 'except Exception:' at minimum, ideally a specific type",
+                )
+            )
         else:
             names = (
                 [unparse(e) for e in h.type.elts]
@@ -87,22 +94,34 @@ def _exception_handling(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
                 else [unparse(h.type)]
             )
             if any(n.split(".")[-1] in _BROAD for n in names):
-                out.append(_f(
-                    "broad-except", h, where,
-                    f"catches {', '.join(names)} — hides unrelated bugs",
-                    "warn", "narrow to the exceptions you can actually handle",
-                ))
+                out.append(
+                    _f(
+                        "broad-except",
+                        h,
+                        where,
+                        f"catches {', '.join(names)} — hides unrelated bugs",
+                        "warn",
+                        "narrow to the exceptions you can actually handle",
+                    )
+                )
         body = [s for s in h.body if not isinstance(s, ast.Pass)]
         if not body:
-            out.append(_f(
-                "except-pass", h, where,
-                "exception silently swallowed ('except ...: pass')",
-                "error", "log it, re-raise, or add a comment explaining why it is safe",
-            ))
+            out.append(
+                _f(
+                    "except-pass",
+                    h,
+                    where,
+                    "exception silently swallowed ('except ...: pass')",
+                    "error",
+                    "log it, re-raise, or add a comment explaining why it is safe",
+                )
+            )
         elif len(h.body) == 1 and isinstance(h.body[0], ast.Expr):
             val = h.body[0].value
             if isinstance(val, ast.Constant) and val.value is Ellipsis:
-                out.append(_f("except-pass", h, where, "exception body is '...'", "error"))
+                out.append(
+                    _f("except-pass", h, where, "exception body is '...'", "error")
+                )
     return out
 
 
@@ -111,12 +130,17 @@ def _mutable_default_args(funcs: list[FuncInfo]) -> list[Finding]:
     out: list[Finding] = []
     for fi in funcs:
         for name, node in mutable_defaults(fi):
-            out.append(_f(
-                "mutable-default", node, fi.qualname,
-                f"parameter '{name}' defaults to mutable {truncate(unparse(node), 30)} "
-                "— shared across every call",
-                "error", f"use '{name}=None' then assign inside the body",
-            ))
+            out.append(
+                _f(
+                    "mutable-default",
+                    node,
+                    fi.qualname,
+                    f"parameter '{name}' defaults to mutable {truncate(unparse(node), 30)} "
+                    "— shared across every call",
+                    "error",
+                    f"use '{name}=None' then assign inside the body",
+                )
+            )
     return out
 
 
@@ -161,12 +185,17 @@ def _unawaited_coroutines(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
             grand = pm.parent(grand) if grand is not None else None
         if wrapped:
             continue
-        out.append(_f(
-            "unawaited-coroutine", call, _scope_of(pm, call),
-            f"call to async def '{target.qualname}' is not awaited "
-            "(best effort — may be intentional)",
-            "error", "add 'await', or wrap in asyncio.create_task(...)",
-        ))
+        out.append(
+            _f(
+                "unawaited-coroutine",
+                call,
+                _scope_of(pm, call),
+                f"call to async def '{target.qualname}' is not awaited "
+                "(best effort — may be intentional)",
+                "error",
+                "add 'await', or wrap in asyncio.create_task(...)",
+            )
+        )
     return out
 
 
@@ -180,11 +209,16 @@ def _assert_for_validation(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
             where = _scope_of(pm, node)
             if where.startswith("test_") or ".test_" in where:
                 continue
-            out.append(_f(
-                "assert-for-validation", node, where,
-                f"assert {truncate(unparse(node.test), 50)} — stripped under 'python -O'",
-                "warn", "raise an explicit exception for runtime validation",
-            ))
+            out.append(
+                _f(
+                    "assert-for-validation",
+                    node,
+                    where,
+                    f"assert {truncate(unparse(node.test), 50)} — stripped under 'python -O'",
+                    "warn",
+                    "raise an explicit exception for runtime validation",
+                )
+            )
     return out
 
 
@@ -194,22 +228,26 @@ def _singleton_comparisons(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
     for cmp_node in ast.walk(pm.tree):
         if not isinstance(cmp_node, ast.Compare) or not _in_range(cmp_node, lo, hi):
             continue
-        for op, comparator in zip(cmp_node.ops, cmp_node.comparators):
+        for op, comparator in zip(cmp_node.ops, cmp_node.comparators, strict=True):
             if not isinstance(op, (ast.Eq, ast.NotEq)):
                 continue
             for side in (cmp_node.left, comparator):
                 if isinstance(side, ast.Constant) and side.value in (None, True, False):
                     if side.value is None or isinstance(side.value, bool):
                         good = "is" if isinstance(op, ast.Eq) else "is not"
-                        out.append(_f(
-                            "singleton-comparison", cmp_node, _scope_of(pm, cmp_node),
-                            f"'{truncate(unparse(cmp_node), 60)}' compares to "
-                            f"{side.value!r} with ==/!=",
-                            "warn",
-                            f"use '{good} {side.value!r}'"
-                            if side.value is None
-                            else "use the value directly or 'is True'",
-                        ))
+                        out.append(
+                            _f(
+                                "singleton-comparison",
+                                cmp_node,
+                                _scope_of(pm, cmp_node),
+                                f"'{truncate(unparse(cmp_node), 60)}' compares to "
+                                f"{side.value!r} with ==/!=",
+                                "warn",
+                                f"use '{good} {side.value!r}'"
+                                if side.value is None
+                                else "use the value directly or 'is True'",
+                            )
+                        )
                         break
     return out
 
@@ -233,15 +271,23 @@ def _late_binding_closures(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
                 free = _loads(inner) - bound
                 hit = targets & free
                 if hit:
-                    kind = "lambda" if isinstance(inner, ast.Lambda) else f"def {inner.name}"
-                    out.append(_f(
-                        "late-binding-closure", inner, _scope_of(pm, loop),
-                        f"{kind} captures loop variable(s) {', '.join(sorted(hit))} "
-                        "by reference — all copies see the final value",
-                        "error",
-                        f"bind with a default arg, e.g. "
-                        f"lambda {sorted(hit)[0]}={sorted(hit)[0]}: ...",
-                    ))
+                    kind = (
+                        "lambda"
+                        if isinstance(inner, ast.Lambda)
+                        else f"def {inner.name}"
+                    )
+                    out.append(
+                        _f(
+                            "late-binding-closure",
+                            inner,
+                            _scope_of(pm, loop),
+                            f"{kind} captures loop variable(s) {', '.join(sorted(hit))} "
+                            "by reference — all copies see the final value",
+                            "error",
+                            f"bind with a default arg, e.g. "
+                            f"lambda {sorted(hit)[0]}={sorted(hit)[0]}: ...",
+                        )
+                    )
     return out
 
 
@@ -270,11 +316,16 @@ def _unused_self(pm: ParsedModule, funcs: list[FuncInfo]) -> list[Finding]:
             continue  # stub / NotImplementedError placeholder
         used = _attr_owners(ast.Module(body=fi.node.body, type_ignores=[]))
         if "self" not in used:
-            out.append(_f(
-                "unused-self", fi.node, fi.qualname,
-                "method never uses 'self'", "info",
-                "make it a @staticmethod or move it to module scope",
-            ))
+            out.append(
+                _f(
+                    "unused-self",
+                    fi.node,
+                    fi.qualname,
+                    "method never uses 'self'",
+                    "info",
+                    "make it a @staticmethod or move it to module scope",
+                )
+            )
     return out
 
 

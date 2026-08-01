@@ -22,7 +22,14 @@ MAX_PARAMS = 5
 _BUILTINS = set(dir(builtins))
 _ALLOWED_SHADOWS = {"_", "id_", "type_"}
 _MUTABLE_NODES = (ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)
-_MUTABLE_CALLS = {"list", "dict", "set", "collections.OrderedDict", "bytearray", "defaultdict"}
+_MUTABLE_CALLS = {
+    "list",
+    "dict",
+    "set",
+    "collections.OrderedDict",
+    "bytearray",
+    "defaultdict",
+}
 
 
 @dataclass
@@ -63,7 +70,7 @@ def _nesting_depth(node: ast.AST) -> tuple[int, int]:
                     ast.Try,
                     ast.ExceptHandler,
                 ),
-            ) or (hasattr(ast, "Match") and isinstance(child, getattr(ast, "Match"))):
+            ) or (hasattr(ast, "Match") and isinstance(child, ast.Match)):
                 d = depth + 1
                 if d > best[0]:
                     best = (d, getattr(child, "lineno", 0))
@@ -82,7 +89,7 @@ def mutable_defaults(fi: FuncInfo) -> list[tuple[str, ast.expr]]:
     pad = len(positional) - len(args.defaults)
     for i, d in enumerate(args.defaults):
         pairs.append((positional[pad + i].arg, d))
-    for a, d in zip(args.kwonlyargs, args.kw_defaults):
+    for a, d in zip(args.kwonlyargs, args.kw_defaults, strict=True):
         if d is not None:
             pairs.append((a.arg, d))
     bad: list[tuple[str, ast.expr]] = []
@@ -101,7 +108,11 @@ def _shadowed_builtins(pm: ParsedModule, node: ast.AST, where: str) -> list[Find
     seen: set[tuple[str, int]] = set()
 
     def report(name: str, lineno: int, what: str) -> None:
-        if name in _BUILTINS and name not in _ALLOWED_SHADOWS and not name.startswith("__"):
+        if (
+            name in _BUILTINS
+            and name not in _ALLOWED_SHADOWS
+            and not name.startswith("__")
+        ):
             key = (name, lineno)
             if key in seen:
                 return
@@ -246,7 +257,9 @@ def code_smells(path: str, function: str | None = None) -> str:
     pm = parse_file(path)
     findings = collect_smells(pm, function)
     scope = f"function {function}" if function else "whole file"
-    out = [header("code_smells", pm.path, f"{scope}, {plural(len(findings), 'finding')}")]
+    out = [
+        header("code_smells", pm.path, f"{scope}, {plural(len(findings), 'finding')}")
+    ]
     if not findings:
         out.append("\nNo smells detected against the configured thresholds.")
         out.append(
@@ -259,8 +272,7 @@ def code_smells(path: str, function: str | None = None) -> str:
     for f in findings:
         by_kind.setdefault(f.kind, []).append(f)
     out.append(
-        "summary: "
-        + ", ".join(f"{k}×{len(v)}" for k, v in sorted(by_kind.items()))
+        "summary: " + ", ".join(f"{k}×{len(v)}" for k, v in sorted(by_kind.items()))
     )
     for sev in ("error", "warn", "info"):
         group = [f for f in findings if f.severity == sev]

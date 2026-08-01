@@ -41,7 +41,9 @@ _KIND_BY_BASE = {
 
 def class_kind_of(node: ast.ClassDef) -> str:
     """Best-effort classification of a ClassDef."""
-    decs = {unparse(d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list}
+    decs = {
+        unparse(d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list
+    }
     if any(d.split(".")[-1] == "dataclass" for d in decs):
         return "dataclass"
     for base in node.bases:
@@ -64,11 +66,13 @@ def classify_class(node: ast.ClassDef) -> tuple[str, list[str]]:
 
 def is_type_alias(stmt: ast.stmt) -> bool:
     """``X: TypeAlias = ...``, ``type X = ...`` (3.12) or a bare typing alias."""
-    if hasattr(ast, "TypeAlias") and isinstance(stmt, getattr(ast, "TypeAlias")):
+    if hasattr(ast, "TypeAlias") and isinstance(stmt, ast.TypeAlias):
         return True
     if isinstance(stmt, ast.AnnAssign) and stmt.annotation is not None:
         return unparse(stmt.annotation).split(".")[-1] == "TypeAlias"
-    if isinstance(stmt, ast.Assign) and isinstance(stmt.value, (ast.Subscript, ast.Call)):
+    if isinstance(stmt, ast.Assign) and isinstance(
+        stmt.value, (ast.Subscript, ast.Call)
+    ):
         text = unparse(stmt.value)
         head = text.split("[")[0].split("(")[0].split(".")[-1]
         return head in {
@@ -120,7 +124,9 @@ def infer_literal_type(value: ast.expr | None) -> str:
         func = value.func
         name = unparse(func)
         short = name.split(".")[-1]
-        if short and (short[0].isupper() or short in {"dict", "list", "set", "tuple", "frozenset"}):
+        if short and (
+            short[0].isupper() or short in {"dict", "list", "set", "tuple", "frozenset"}
+        ):
             return short
         return f"{short}(...)"
     if isinstance(value, ast.BinOp):
@@ -142,7 +148,7 @@ def _find_type_node(pm: ParsedModule, name: str) -> tuple[str, ast.AST] | None:
         ):
             return class_kind_of(node), node
     for stmt in pm.tree.body:
-        if hasattr(ast, "TypeAlias") and isinstance(stmt, getattr(ast, "TypeAlias")):
+        if hasattr(ast, "TypeAlias") and isinstance(stmt, ast.TypeAlias):
             if unparse(stmt.name) == name:
                 return "type alias", stmt
         if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
@@ -235,11 +241,13 @@ def list_declarations(path: str) -> str:
                         f"[{loc(stmt)}] {n}: {inferred}{tag} = "
                         f"{truncate(unparse(stmt.value), 60)}"
                     )
-        elif hasattr(ast, "TypeAlias") and isinstance(stmt, getattr(ast, "TypeAlias")):
+        elif hasattr(ast, "TypeAlias") and isinstance(stmt, ast.TypeAlias):
             rows.append(
                 f"[{loc(stmt)}] {unparse(stmt.name)} [TypeAlias] = "
                 f"{truncate(unparse(stmt.value), 60)}"
             )
-    out = [header("module-level declarations", pm.path, plural(len(rows), "declaration"))]
+    out = [
+        header("module-level declarations", pm.path, plural(len(rows), "declaration"))
+    ]
     out.append("\n".join(bullet(r) for r in rows) if rows else empty("declarations"))
     return "\n".join(out)

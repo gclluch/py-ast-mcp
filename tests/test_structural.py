@@ -11,7 +11,6 @@ from py_ast_mcp.parse import AstToolError
 from py_ast_mcp.types import get_type_definition, list_declarations
 from py_ast_mcp.usages import find_usages
 
-
 # --- analyze_file ---------------------------------------------------------
 
 
@@ -43,9 +42,11 @@ def test_list_functions_signatures(sample):
     out = list_functions(sample)
     assert (
         "def process(items: list[str], /, prefix: str = '', *extra: str, "
-        "*, upper: bool = False, **options: Any) -> list[str]" in out
+        "*, upper: bool = False, **options: Any) -> list[str]"
+        in out
         or "def process(items: list[str], /, prefix: str = '', *extra: str, "
-        "upper: bool = False, **options: Any) -> list[str]" in out
+        "upper: bool = False, **options: Any) -> list[str]"
+        in out
     )
     assert "async def fetch_one(key: str, repo: Repository)" in out
     assert "@dataclass" not in out.split("## module level")[0] or True
