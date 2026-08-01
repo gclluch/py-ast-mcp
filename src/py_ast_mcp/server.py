@@ -258,8 +258,12 @@ def get_callers(path: str, function: str, scope: str = "file") -> str:
 def code_complexity(path: str, function: str | None = None) -> str:
     """Cyclomatic complexity per function, with rank and decision-point breakdown.
 
-    Counts if/elif, for, while, except, with, assert, comprehension ifs, boolean
-    operators, ternaries and match cases.
+    Counts if/elif, for, while, except, comprehension fors and ifs, boolean
+    operators, ternaries, and match cases other than the irrefutable one.
+    Scores match `radon cc --no-assert`.
+
+    `with` and `assert` are deliberately not counted: neither branches. `with`
+    still adds nesting depth.
 
     Args:
         path: Path to a .py file.
@@ -272,7 +276,8 @@ def code_complexity(path: str, function: str | None = None) -> str:
 @_safe
 def code_smells(path: str, function: str | None = None) -> str:
     """Detect long functions, deep nesting, god classes, too many parameters,
-    mutable default arguments, bare excepts and shadowed builtins.
+    mutable default arguments, mutable `@dataclass` field defaults, high
+    complexity, bare excepts and shadowed builtins.
 
     Args:
         path: Path to a .py file.
@@ -284,10 +289,12 @@ def code_smells(path: str, function: str | None = None) -> str:
 @mcp.tool()
 @_safe
 def find_errors(path: str, function: str | None = None) -> str:
-    """Find Python-specific hazards: bare/broad except, `except: pass`, mutable
-    default args, unawaited coroutines (best effort), `assert` used for runtime
-    validation, late-binding loop closures, `==` against None/True/False and
-    methods that never use `self`.
+    """Find Python-specific hazards: bare/broad except, `except: pass`, handlers
+    made unreachable by an earlier one, mutable default args, mutable
+    `@dataclass` field defaults (an import-time ValueError), unawaited
+    coroutines (best effort), `assert` used for runtime validation,
+    late-binding closures over a loop or comprehension variable, `==` against
+    None/True/False, `is` against a literal, and methods that never use `self`.
 
     Args:
         path: Path to a .py file.

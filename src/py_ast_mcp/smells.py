@@ -11,7 +11,13 @@ from .format import bullet, header, plural, section, truncate, unparse
 from .functions import FuncInfo, collect_functions, find_function
 from .parse import ParsedModule, parse_file
 
-__all__ = ["Finding", "code_smells", "collect_smells"]
+__all__ = [
+    "Finding",
+    "code_smells",
+    "collect_smells",
+    "mutable_dataclass_fields",
+    "default_factory_hint",
+]
 
 LONG_FUNCTION_LINES = 50
 DEEP_NESTING = 4
@@ -30,6 +36,9 @@ _MUTABLE_CALLS = {
     "bytearray",
     "defaultdict",
 }
+_DATACLASS_DECORATORS = {"dataclass", "dataclasses.dataclass"}
+# Not fields, so `@dataclass` never inspects their defaults.
+_NON_FIELD_ANNOTATIONS = {"ClassVar", "InitVar"}
 
 
 @dataclass
@@ -82,6 +91,25 @@ def _nesting_depth(node: ast.AST) -> tuple[int, int]:
     return best
 
 
+def _is_mutable_default(node: ast.expr) -> bool:
+    if isinstance(node, _MUTABLE_NODES):
+        return True
+    if isinstance(node, ast.Call):
+        fn = unparse(node.func)
+        return fn in _MUTABLE_CALLS or fn.split(".")[-1] in _MUTABLE_CALLS
+    return False
+
+
+def default_factory_hint(node: ast.expr) -> str:
+    """The `default_factory=` argument that reproduces `node` per call."""
+    literal = {ast.List: "list", ast.Dict: "dict", ast.Set: "set"}.get(type(node))
+    if literal and not (getattr(node, "elts", None) or getattr(node, "keys", None)):
+        return literal
+    if isinstance(node, ast.Call) and not (node.args or node.keywords):
+        return unparse(node.func)
+    return f"lambda: {truncate(unparse(node), 30)}"
+
+
 def mutable_defaults(fi: FuncInfo) -> list[tuple[str, ast.expr]]:
     args = fi.node.args
     pairs: list[tuple[str, ast.expr]] = []
@@ -92,15 +120,49 @@ def mutable_defaults(fi: FuncInfo) -> list[tuple[str, ast.expr]]:
     for a, d in zip(args.kwonlyargs, args.kw_defaults, strict=True):
         if d is not None:
             pairs.append((a.arg, d))
-    bad: list[tuple[str, ast.expr]] = []
-    for name, node in pairs:
-        if isinstance(node, _MUTABLE_NODES):
-            bad.append((name, node))
-        elif isinstance(node, ast.Call):
-            fn = unparse(node.func)
-            if fn in _MUTABLE_CALLS or fn.split(".")[-1] in _MUTABLE_CALLS:
-                bad.append((name, node))
-    return bad
+    return [(name, node) for name, node in pairs if _is_mutable_default(node)]
+
+
+def is_dataclass_def(cls: ast.ClassDef) -> bool:
+    for dec in cls.decorator_list:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        if unparse(target) in _DATACLASS_DECORATORS:
+            return True
+    return False
+
+
+def mutable_dataclass_fields(cls: ast.ClassDef) -> list[tuple[str, ast.expr]]:
+    """Dataclass fields whose default is unhashable.
+
+    `@dataclass` raises `ValueError: mutable default ... use default_factory`
+    while executing the class body, so the module cannot be imported at all.
+    This is a crash, not a style question - unlike the parameter form, which
+    merely shares one object across calls.
+
+    Only annotated assignments are fields: `tags = []` in a dataclass body is
+    an ordinary class attribute and raises nothing. `ClassVar` and `InitVar`
+    are not fields either.
+
+    Matching the bare name `dataclass` is deliberate and safe: pydantic's
+    `@dataclass` delegates to `dataclasses.dataclass` and raises the identical
+    ValueError, and `attrs` spells its decorator `@define`/`@attr.s`, so
+    neither produces a false "this crashes". A pydantic `BaseModel` has no
+    decorator at all and is likewise untouched.
+    """
+    if not is_dataclass_def(cls):
+        return []
+    out: list[tuple[str, ast.expr]] = []
+    for stmt in cls.body:
+        if not isinstance(stmt, ast.AnnAssign) or stmt.value is None:
+            continue
+        if not isinstance(stmt.target, ast.Name):
+            continue
+        ann = unparse(stmt.annotation).split("[")[0].strip().split(".")[-1]
+        if ann in _NON_FIELD_ANNOTATIONS:
+            continue
+        if _is_mutable_default(stmt.value):
+            out.append((stmt.target.id, stmt.value))
+    return out
 
 
 def _shadowed_builtins(pm: ParsedModule, node: ast.AST, where: str) -> list[Finding]:
@@ -215,6 +277,19 @@ def collect_smells(pm: ParsedModule, function: str | None = None) -> list[Findin
             )
 
     for cls in classes:
+        for name, node in mutable_dataclass_fields(cls):
+            findings.append(
+                Finding(
+                    "mutable-dataclass-field",
+                    node.lineno,
+                    cls.name,
+                    f"field '{name}' defaults to mutable "
+                    f"{truncate(unparse(node), 30)} — @dataclass raises "
+                    "ValueError while defining the class",
+                    "error",
+                    f"use 'field(default_factory={default_factory_hint(node)})'",
+                )
+            )
         methods = [
             s
             for s in cls.body

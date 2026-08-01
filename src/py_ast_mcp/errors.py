@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 import ast
+import builtins
 
 from .format import bullet, header, plural, section, truncate, unparse
 from .functions import FuncInfo, collect_functions, find_function
 from .parse import ParsedModule, is_test_filename, parse_file
-from .smells import Finding, mutable_defaults
+from .smells import (
+    Finding,
+    default_factory_hint,
+    mutable_dataclass_fields,
+    mutable_defaults,
+)
 
 __all__ = ["find_errors", "collect_errors"]
 
 _BROAD = {"Exception", "BaseException"}
+_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+# ast.TryStar is 3.11+
+_TRY_NODES = tuple(
+    t for t in (getattr(ast, "Try", None), getattr(ast, "TryStar", None)) if t
+)
 _ASYNC_WRAPPERS = {
     "gather",
     "create_task",
@@ -144,6 +155,33 @@ def _mutable_default_args(funcs: list[FuncInfo]) -> list[Finding]:
     return out
 
 
+def _mutable_dataclass_defaults(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
+    """Dataclass fields defaulting to a mutable literal.
+
+    Strictly worse than the parameter form this file already catches: the class
+    body itself raises `ValueError`, so importing the module fails outright.
+    """
+    out: list[Finding] = []
+    for cls in ast.walk(pm.tree):
+        if not isinstance(cls, ast.ClassDef) or not _in_range(cls, lo, hi):
+            continue
+        for name, node in mutable_dataclass_fields(cls):
+            out.append(
+                _f(
+                    "mutable-dataclass-field",
+                    node,
+                    pm.qualname(cls),
+                    f"field '{name}' defaults to mutable "
+                    f"{truncate(unparse(node), 30)} — @dataclass raises "
+                    "ValueError while defining the class, so the module "
+                    "cannot be imported",
+                    "error",
+                    f"use 'field(default_factory={default_factory_hint(node)})'",
+                )
+            )
+    return out
+
+
 def _unawaited_coroutines(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
     """Calls to `async def` functions in this file that are never awaited.
 
@@ -252,43 +290,193 @@ def _singleton_comparisons(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
     return out
 
 
-def _late_binding_closures(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
-    """Closures capturing a loop variable by reference."""
-    out: list[Finding] = []
-    for loop in ast.walk(pm.tree):
-        if not isinstance(loop, (ast.For, ast.AsyncFor)) or not _in_range(loop, lo, hi):
+def _capturing_closures(
+    scope: ast.AST, targets: set[str]
+) -> list[tuple[ast.AST, set[str]]]:
+    """Closures inside `scope` that read `targets` without binding them."""
+    out: list[tuple[ast.AST, set[str]]] = []
+    for inner in ast.walk(scope):
+        if inner is scope:
             continue
-        targets = {n.id for n in ast.walk(loop.target) if isinstance(n, ast.Name)}
+        if not isinstance(inner, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        args = inner.args
+        bound = {a.arg for a in list(args.posonlyargs) + list(args.args)}
+        bound |= {a.arg for a in args.kwonlyargs}
+        hit = targets & (_loads(inner) - bound)
+        if hit:
+            out.append((inner, hit))
+    return out
+
+
+def _late_binding_closures(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
+    """Closures capturing an iteration variable by reference.
+
+    Both the statement loop and the comprehension form are checked. A
+    comprehension has its own scope, but one shared cell per iteration
+    variable within it, so `[lambda: i for i in range(3)]` late-binds exactly
+    like the loop does - and it is the form people actually write.
+    """
+    out: list[Finding] = []
+    for node in ast.walk(pm.tree):
+        if not _in_range(node, lo, hi):
+            continue
+        if isinstance(node, (ast.For, ast.AsyncFor)):
+            targets = {n.id for n in ast.walk(node.target) if isinstance(n, ast.Name)}
+            what = "loop"
+        elif isinstance(node, _COMPREHENSIONS):
+            targets = {
+                n.id
+                for gen in node.generators
+                for n in ast.walk(gen.target)
+                if isinstance(n, ast.Name)
+            }
+            what = "comprehension"
+        else:
+            continue
         if not targets:
             continue
-        for inner in ast.walk(loop):
-            if inner is loop:
-                continue
-            if isinstance(inner, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef)):
-                args = inner.args
-                bound = {a.arg for a in list(args.posonlyargs) + list(args.args)}
-                bound |= {a.arg for a in args.kwonlyargs}
-                free = _loads(inner) - bound
-                hit = targets & free
-                if hit:
-                    kind = (
-                        "lambda"
-                        if isinstance(inner, ast.Lambda)
-                        else f"def {inner.name}"
-                    )
-                    out.append(
-                        _f(
-                            "late-binding-closure",
-                            inner,
-                            _scope_of(pm, loop),
-                            f"{kind} captures loop variable(s) {', '.join(sorted(hit))} "
-                            "by reference — all copies see the final value",
-                            "error",
-                            f"bind with a default arg, e.g. "
-                            f"lambda {sorted(hit)[0]}={sorted(hit)[0]}: ...",
-                        )
-                    )
+        for inner, hit in _capturing_closures(node, targets):
+            kind = "lambda" if isinstance(inner, ast.Lambda) else f"def {inner.name}"
+            out.append(
+                _f(
+                    "late-binding-closure",
+                    inner,
+                    _scope_of(pm, node),
+                    f"{kind} captures {what} variable(s) {', '.join(sorted(hit))} "
+                    "by reference — all copies see the final value",
+                    "error",
+                    f"bind with a default arg, e.g. "
+                    f"lambda {sorted(hit)[0]}={sorted(hit)[0]}: ...",
+                )
+            )
     return out
+
+
+def _is_constant_expr(node: ast.expr) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    return isinstance(node, ast.Tuple) and all(_is_constant_expr(e) for e in node.elts)
+
+
+def _warns_under_is(node: ast.expr) -> bool:
+    """Mirrors CPython's own `"is" with a literal` SyntaxWarning.
+
+    None, True, False and Ellipsis are genuine singletons, so identity against
+    them is correct and is not warned about. A tuple counts only when every
+    element folds to a constant: `x is (1, y)` builds a fresh tuple each time
+    and CPython stays quiet about it, so we do too.
+    """
+    if isinstance(node, ast.Tuple):
+        return _is_constant_expr(node)
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, (int, float, complex, str, bytes)) and not (
+            isinstance(node.value, bool)
+        )
+    return False
+
+
+def _is_with_literal(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
+    """`x is 5` - identity against a value with no identity guarantee.
+
+    CPython itself raises a SyntaxWarning here; staying silent would make this
+    analyser quieter than the interpreter that runs the code.
+    """
+    out: list[Finding] = []
+    for cmp_node in ast.walk(pm.tree):
+        if not isinstance(cmp_node, ast.Compare) or not _in_range(cmp_node, lo, hi):
+            continue
+        for op, comparator in zip(cmp_node.ops, cmp_node.comparators, strict=True):
+            if not isinstance(op, (ast.Is, ast.IsNot)):
+                continue
+            literal = next(
+                (s for s in (cmp_node.left, comparator) if _warns_under_is(s)), None
+            )
+            if literal is None:
+                continue
+            word = "is" if isinstance(op, ast.Is) else "is not"
+            better = "==" if isinstance(op, ast.Is) else "!="
+            out.append(
+                _f(
+                    "is-with-literal",
+                    cmp_node,
+                    _scope_of(pm, cmp_node),
+                    f"'{truncate(unparse(cmp_node), 60)}' compares identity against "
+                    f"the literal {truncate(unparse(literal), 20)} — CPython raises "
+                    f'SyntaxWarning: "{word}" with a literal',
+                    "error",
+                    f"use '{better}'; equal values are not guaranteed to be the "
+                    "same object",
+                )
+            )
+            break
+    return out
+
+
+def _unreachable_handlers(pm: ParsedModule, lo: int, hi: int) -> list[Finding]:
+    """`except` clauses shadowed by an earlier one on the same `try`.
+
+    Handlers are tried in order, so a later clause naming a subclass of - or
+    the same class as - an earlier one can never run. Only builtin exception
+    names can be checked for a subclass relation without resolving imports;
+    for anything else an exact repeated name is still conclusive.
+    """
+    out: list[Finding] = []
+    for node in ast.walk(pm.tree):
+        if not isinstance(node, _TRY_NODES) or not _in_range(node, lo, hi):
+            continue
+        seen: list[str] = []
+        after_bare = False
+        for handler in node.handlers:
+            names = _handler_names(handler)
+            shadow = "bare except:" if after_bare else _shadowing_name(seen, names)
+            if shadow is not None:
+                out.append(
+                    _f(
+                        "unreachable-except",
+                        handler,
+                        _scope_of(pm, handler),
+                        f"'except {', '.join(names)}' can never run — the earlier "
+                        f"'{shadow}' already catches it",
+                        "error",
+                        "order handlers most specific first, or drop this clause",
+                    )
+                )
+            after_bare = after_bare or handler.type is None
+            seen.extend(names)
+    return out
+
+
+def _handler_names(handler: ast.ExceptHandler) -> list[str]:
+    if handler.type is None:
+        return [""]
+    parts = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return [unparse(e) for e in parts]
+
+
+def _builtin_exception(name: str) -> type | None:
+    """The builtin exception class `name` names, if it is one.
+
+    Only a bare name is trusted: `mod.ValueError` may be anything at all, and
+    guessing at a dotted name would invent a hierarchy that does not exist.
+    """
+    if "." in name:
+        return None
+    obj = getattr(builtins, name, None)
+    return obj if isinstance(obj, type) and issubclass(obj, BaseException) else None
+
+
+def _shadowing_name(seen: list[str], names: list[str]) -> str | None:
+    """The earlier handler that makes `names` dead, if any."""
+    for name in names:
+        cls = _builtin_exception(name)
+        for prev in seen:
+            if prev == name:
+                return prev
+            prev_cls = _builtin_exception(prev)
+            if cls is not None and prev_cls is not None and issubclass(cls, prev_cls):
+                return prev
+    return None
 
 
 def _unused_self(pm: ParsedModule, funcs: list[FuncInfo]) -> list[Finding]:
@@ -342,10 +530,13 @@ def collect_errors(pm: ParsedModule, function: str | None = None) -> list[Findin
     findings = [
         *_exception_handling(pm, lo, hi),
         *_mutable_default_args(funcs),
+        *_mutable_dataclass_defaults(pm, lo, hi),
         *_unawaited_coroutines(pm, lo, hi),
         *_assert_for_validation(pm, lo, hi),
         *_singleton_comparisons(pm, lo, hi),
+        *_is_with_literal(pm, lo, hi),
         *_late_binding_closures(pm, lo, hi),
+        *_unreachable_handlers(pm, lo, hi),
         *_unused_self(pm, funcs),
     ]
     findings.sort(key=lambda f: (f.lineno, f.kind))
