@@ -19,8 +19,8 @@ from .functions import build_func_info, decorator_names
 from .imports import collect_imports, dunder_all
 from .parse import (
     AstToolError,
-    ParseError,
     ParsedModule,
+    ParseError,
     iter_py_files,
     parse_file,
     resolve_path,
@@ -40,7 +40,10 @@ def _class_line(pm: ParsedModule, node: ast.ClassDef) -> str:
         s
         for s in node.body
         if isinstance(s, ast.AnnAssign)
-        or (isinstance(s, ast.Assign) and all(isinstance(t, ast.Name) for t in s.targets))
+        or (
+            isinstance(s, ast.Assign)
+            and all(isinstance(t, ast.Name) for t in s.targets)
+        )
     ]
     bits = [f"{len(methods)} methods"]
     if props:
@@ -65,11 +68,18 @@ def _overview_lines(pm: ParsedModule, classes, funcs, imports) -> list[str]:
         "lines": len(pm.lines),
         "imports": len(imports),
         "classes": len(classes),
-        "functions": len([f for f in funcs if not isinstance(f, ast.AsyncFunctionDef)]),
-        "async functions": len([f for f in funcs if isinstance(f, ast.AsyncFunctionDef)]),
+        # "module-level", because `list_functions` counts methods too and the
+        # two totals otherwise look like a contradiction on the same file.
+        "module-level functions": len(
+            [f for f in funcs if not isinstance(f, ast.AsyncFunctionDef)]
+        ),
+        "module-level async functions": len(
+            [f for f in funcs if isinstance(f, ast.AsyncFunctionDef)]
+        ),
     }
     out.append(
-        "counts: " + ", ".join(f"{v} {k}" for k, v in counts.items() if v or k == "lines")
+        "counts: "
+        + ", ".join(f"{v} {k}" for k, v in counts.items() if v or k == "lines")
     )
     all_decl = dunder_all(pm)
     if all_decl:
@@ -89,34 +99,35 @@ def _imports_lines(imports) -> list[str]:
 
 
 def _classes_lines(pm: ParsedModule, classes) -> list[str]:
-    """Classes grouped by kind, each followed by its methods."""
+    """Classes in source order, each followed by its methods.
+
+    Source order, not grouped by kind: every other section of this report is
+    line-ordered, and each class line already names its own kind, so grouping
+    only scrambled the line numbers.
+    """
     if not classes:
         return []
-    by_kind: dict[str, list[ast.ClassDef]] = {}
-    for c in classes:
-        by_kind.setdefault(class_kind_of(c), []).append(c)
     out = [section(f"classes ({len(classes)})")]
-    for kind in sorted(by_kind):
-        for c in by_kind[kind]:
-            out.append(bullet(_class_line(pm, c)))
-            for s in c.body:
-                if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    fi = build_func_info(pm, s, c.name)
-                    tag = f" [{fi.kind}]" if fi.kind != "method" else ""
-                    out.append(
-                        bullet(
-                            f"[{loc(line=fi.lineno, end=fi.end_lineno)}] "
-                            f"{fi.signature()}{tag}",
-                            1,
-                        )
+    for c in classes:
+        out.append(bullet(_class_line(pm, c)))
+        for s in c.body:
+            if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fi = build_func_info(pm, s, c.name)
+                tag = f" [{fi.kind}]" if fi.kind != "method" else ""
+                out.append(
+                    bullet(
+                        f"[{loc(line=fi.lineno, end=fi.end_lineno)}] "
+                        f"{fi.signature()}{tag}",
+                        1,
                     )
+                )
     return out
 
 
 def _functions_lines(pm: ParsedModule, funcs) -> list[str]:
     if not funcs:
         return []
-    out = [section(f"functions ({len(funcs)})")]
+    out = [section(f"module-level functions ({len(funcs)})")]
     for f in funcs:
         fi = build_func_info(pm, f)
         line = f"[{loc(line=fi.lineno, end=fi.end_lineno)}] {fi.signature()}"
@@ -144,7 +155,7 @@ def _assignments_lines(pm: ParsedModule) -> list[str]:
                     assigns.append(
                         f"[{loc(stmt)}] {t.id}: {infer_literal_type(stmt.value)}{tag}"
                     )
-        elif hasattr(ast, "TypeAlias") and isinstance(stmt, getattr(ast, "TypeAlias")):
+        elif hasattr(ast, "TypeAlias") and isinstance(stmt, ast.TypeAlias):
             assigns.append(f"[{loc(stmt)}] {unparse(stmt.name)} [TypeAlias]")
     if not assigns:
         return []
@@ -201,7 +212,9 @@ def analyze_package(path: str, include_tests: bool = False) -> str:
         except ParseError as exc:
             total["errors"] += 1
             rows.append([str(f.relative_to(base)), "!", "-", "-", "-", "syntax error"])
-            details.append(bullet(f"{f.relative_to(base)}: {exc.message} (line {exc.line})"))
+            details.append(
+                bullet(f"{f.relative_to(base)}: {exc.message} (line {exc.line})")
+            )
             continue
         classes = [n for n in pm.tree.body if isinstance(n, ast.ClassDef)]
         funcs = [n for n in pm.tree.body if isinstance(n, ast.FunctionDef)]

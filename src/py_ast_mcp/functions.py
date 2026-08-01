@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Iterator, Sequence
 
 from .format import bullet, empty, header, loc, plural, section, truncate, unparse
 from .parse import AstToolError, ParsedModule, parse_file
@@ -123,7 +123,7 @@ def _params_of(node: FuncNode) -> list[Param]:
                 kind="vararg",
             )
         )
-    for arg, dflt in zip(a.kwonlyargs, a.kw_defaults):
+    for arg, dflt in zip(a.kwonlyargs, a.kw_defaults, strict=True):
         params.append(
             Param(
                 name=arg.arg,
@@ -193,9 +193,7 @@ def build_func_info(
     )
 
 
-def iter_functions(
-    pm: ParsedModule, include_nested: bool = True
-) -> Iterator[FuncInfo]:
+def iter_functions(pm: ParsedModule, include_nested: bool = True) -> Iterator[FuncInfo]:
     """Yield every function/method in the module in source order."""
 
     def walk(
@@ -214,7 +212,9 @@ def iter_functions(
             ):
                 yield from walk(stmt.body, class_name, func_name)
                 for attr in ("orelse", "finalbody"):
-                    yield from walk(getattr(stmt, attr, []) or [], class_name, func_name)
+                    yield from walk(
+                        getattr(stmt, attr, []) or [], class_name, func_name
+                    )
                 for handler in getattr(stmt, "handlers", []) or []:
                     yield from walk(handler.body, class_name, func_name)
 
@@ -281,7 +281,13 @@ def list_functions(path: str) -> str:
     funcs = collect_functions(pm)
     if not funcs:
         return header("functions", pm.path) + "\n" + empty("functions")
-    out = [header("functions", pm.path, plural(len(funcs), "function"))]
+    out = [
+        header(
+            "functions",
+            pm.path,
+            plural(len(funcs), "function") + " and methods",
+        )
+    ]
     current_class: str | None = "\0"
     for fi in funcs:
         if fi.class_name != current_class:
@@ -327,9 +333,7 @@ def list_methods(path: str, type: str) -> str:  # noqa: A002 - mirrors TS tool p
     pm = parse_file(path)
     cls = _find_class(pm, type)
     if cls is None:
-        classes = [
-            n.name for n in ast.walk(pm.tree) if isinstance(n, ast.ClassDef)
-        ]
+        classes = [n.name for n in ast.walk(pm.tree) if isinstance(n, ast.ClassDef)]
         raise AstToolError(
             f"Class '{type}' not found in {pm.path}. "
             f"Available classes: {', '.join(classes) or '(none)'}"
@@ -360,7 +364,9 @@ def list_methods(path: str, type: str) -> str:  # noqa: A002 - mirrors TS tool p
         if fi.is_async:
             tags.append("async")
         tag = f"  [{', '.join(tags)}]" if tags else ""
-        out.append(bullet(f"[{loc(line=fi.lineno, end=fi.end_lineno)}] {fi.signature()}{tag}"))
+        out.append(
+            bullet(f"[{loc(line=fi.lineno, end=fi.end_lineno)}] {fi.signature()}{tag}")
+        )
 
     # class-level attributes
     attrs = []
@@ -373,7 +379,9 @@ def list_methods(path: str, type: str) -> str:  # noqa: A002 - mirrors TS tool p
         elif isinstance(s, ast.Assign):
             for t in s.targets:
                 if isinstance(t, ast.Name):
-                    attrs.append(f"[{loc(s)}] {t.id} = {truncate(unparse(s.value), 60)}")
+                    attrs.append(
+                        f"[{loc(s)}] {t.id} = {truncate(unparse(s.value), 60)}"
+                    )
     if attrs:
         out.append(section(f"class attributes ({len(attrs)})"))
         out.extend(bullet(a) for a in attrs)
@@ -400,9 +408,7 @@ def list_methods(path: str, type: str) -> str:  # noqa: A002 - mirrors TS tool p
     if inherited:
         out.append(section(f"from base classes in this file ({len(inherited)})"))
         out.extend(bullet(i) for i in inherited)
-    unresolved = [
-        b for b in bases if _find_class(pm, b.split("[")[0]) is None
-    ]
+    unresolved = [b for b in bases if _find_class(pm, b.split("[")[0]) is None]
     if unresolved:
         out.append(
             section("unresolved bases")
