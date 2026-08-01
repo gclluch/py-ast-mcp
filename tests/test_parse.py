@@ -7,6 +7,7 @@ import ast
 import pytest
 
 from py_ast_mcp import format as fmt
+from py_ast_mcp import parse as parse_mod
 from py_ast_mcp.parse import (
     AstToolError,
     ParseError,
@@ -117,3 +118,13 @@ def test_format_helpers():
     rendered = fmt.table([["a", "1"], ["bb", "22"]], ["name", "n"])
     assert "name" in rendered and "---" in rendered
     assert fmt.unparse(None) == ""
+
+
+def test_parse_error_blames_the_interpreter_when_it_might_be_at_fault(monkeypatch):
+    """A server older than the newest grammar must say so, not just "invalid syntax"."""
+    monkeypatch.setattr(parse_mod, "_NEWEST_KNOWN_GRAMMAR", (99, 0))
+    rendered = ParseError("x.py", "invalid syntax", 1, 6, "type A = int").render()
+    assert "note: this server runs on Python" in rendered
+
+    monkeypatch.setattr(parse_mod, "_NEWEST_KNOWN_GRAMMAR", (3, 0))
+    assert "note:" not in ParseError("x.py", "invalid syntax").render()

@@ -8,10 +8,11 @@ single agent turn are cheap.
 from __future__ import annotations
 
 import ast
+import sys
 import threading
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Iterator
 
 __all__ = [
     "AstToolError",
@@ -63,7 +64,31 @@ class ParseError(AstToolError):
             out.append(f"  | {self.text.rstrip()}")
             if self.col is not None:
                 out.append("  | " + " " * max(self.col - 1, 0) + "^")
+        hint = _version_hint()
+        if hint:
+            out.append(hint)
         return "\n".join(out)
+
+
+def _version_hint() -> str:
+    """Warn that the server's own interpreter may be the reason a file fails.
+
+    `ast` parses with the grammar of the running interpreter, so a server on
+    3.11 rejects PEP 695 (`type X = ...`, `def f[T]()`) that the target project
+    uses legitimately. Without this the message reads as "your code is broken".
+    """
+    major, minor = sys.version_info[:2]
+    if (major, minor) >= _NEWEST_KNOWN_GRAMMAR:
+        return ""
+    return (
+        f"  note: this server runs on Python {major}.{minor}; syntax added after "
+        f"{major}.{minor} (e.g. PEP 695 `type X = ...`) cannot be parsed. "
+        "Run the server on your newest Python if the file itself is valid."
+    )
+
+
+# Bump when a newer release adds syntax; below this, a SyntaxError might be ours.
+_NEWEST_KNOWN_GRAMMAR = (3, 13)
 
 
 @dataclass
@@ -237,7 +262,9 @@ _SKIP_DIRS = {
 def is_test_filename(path: str | Path) -> bool:
     """True when the *file name* alone marks it as a test module."""
     name = Path(path).name
-    return name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py"
+    return (
+        name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py"
+    )
 
 
 def is_test_file(path: str | Path, root: str | Path | None = None) -> bool:
