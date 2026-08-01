@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-ast-mcp"
+version = "0.1.0"
+description = "MCP server for deep structural analysis of Python source via the stdlib ast module"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "py-ast-mcp contributors" }]
+keywords = ["mcp", "ast", "python", "static-analysis", "llm", "claude"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = ["mcp>=2.0.0"]
+
+[project.optional-dependencies]
+semantic = ["jedi>=0.19"]
+dev = ["pytest>=7.4", "jedi>=0.19"]
+
+[project.scripts]
+py-ast-mcp = "py_ast_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/gclluch/py-ast-mcp"
+Issues = "https://github.com/gclluch/py-ast-mcp/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
