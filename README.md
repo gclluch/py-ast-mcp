@@ -17,12 +17,12 @@ Unlike `grep`, this server understands actual structure: function signatures, cl
 - **Docstring parsing** — Google and NumPy styles are split into summary / params / returns / raises.
 - **Structural diffing** — signature-level, not text-level: what actually changed in the API.
 - **Model-friendly output** — dense, scannable plain text with line numbers everywhere, not raw JSON dumps.
-- **Never crashes on bad input** — syntax errors come back as a readable error with line and column; the server stays up.
+- **Never crashes on bad input** — syntax errors come back as a readable error with line and column, flagged `isError` so a client can tell failure from analysis; the server stays up.
 - **Parse caching** — modules are cached by path + mtime + size, so repeated tool calls in one turn are cheap.
 
 ## Installation
 
-Requires Python 3.10+.
+Requires Python 3.10+. Prefer the newest Python you have installed: the server can only parse syntax its own interpreter understands (see [Known limitations](#known-limitations)).
 
 ```bash
 git clone <this-repo> py-ast-mcp
@@ -71,7 +71,7 @@ All `path` arguments accept absolute paths or paths relative to the server's wor
 | `code_smells` | `path`, `function` | Long functions, deep nesting, god classes, too many parameters, mutable default arguments, bare `except:`, shadowed builtins, high complexity. Grouped by severity with a suggested fix. |
 | `find_errors` | `path`, `function` | Python-specific hazards: bare/broad `except`, `except: pass`, mutable default args, unawaited coroutine calls (best effort), `assert` used for runtime validation, late-binding closures over loop variables, `==`/`!=` against `None`/`True`/`False`, methods that never use `self`. |
 | `dead_code` | `path`, `include_tests` (default `false`) | Unreferenced private and module-level symbols across a directory. If `path` is a file, its containing directory is scanned so cross-file references are seen. |
-| `find_implementations` | `path`, `protocol` | Classes implementing a Protocol/ABC — explicit (direct or indirect base class) and structural (method-set match), plus near misses. |
+| `find_implementations` | `path`, `interface` | Classes implementing a Protocol/ABC — explicit (direct or indirect base class) and structural (method-set match), plus near misses. The argument is `interface`, not `protocol`, so the same call works against `ts-ast-mcp`. |
 
 ### Docs & multi-file
 
@@ -255,6 +255,7 @@ src/py_ast_mcp/
 
 These are heuristics over a syntax tree, not a type checker:
 
+- **The server parses with its own interpreter's grammar.** `ast` can only read syntax the running Python understands, so a server on 3.11 reports `PEP 695` code (`type X = ...`, `def f[T]()`) as a syntax error even though the file is valid. **Run the server on the newest Python you have**, regardless of what the target project targets — parse errors say so when the interpreter may be the cause.
 - **Call resolution is name-based.** `obj.method()` is matched by method name; when several classes in scope define the same name the first one wins. `self.method()` resolves within the enclosing class and then across classes in the file.
 - **Cross-module call edges** in `scope="package"` are resolved through `import` statements only. Dynamic dispatch, factories and callbacks are not followed.
 - **`dead_code` matches by name, not by scope.** `getattr`, plugin registries, entry points and re-exports from outside the scan produce false positives; public symbols are reported separately as lower confidence. The larger risk is the other direction: any attribute access or string literal sharing a symbol's name marks it live, so the tool **under-reports**. Treat hits as candidates to confirm.
