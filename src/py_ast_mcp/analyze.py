@@ -360,9 +360,17 @@ def find_node_at_position(path: str, line: int, column: int) -> str:
 
     from . import jedi_support
 
-    if jedi_support.available():
+    # State which case this is. A silently missing section cannot be told apart
+    # from a resolution that genuinely found nothing.
+    out.append(section("semantic resolution (jedi)"))
+    if not jedi_support.available():
+        out.append(
+            bullet("jedi is not installed - no semantic resolution was attempted")
+        )
+    else:
         inferred = jedi_support.infer_at(pm.path, pm.source, line, column)
         if inferred:
-            out.append(section("semantic resolution (jedi)"))
             out.extend(bullet(i) for i in inferred[:8])
+        else:
+            out.append(bullet("none - jedi resolved no definition at this position"))
     return "\n".join(out)

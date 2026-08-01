@@ -46,12 +46,41 @@ def test_degrades_when_jedi_absent(monkeypatch, pkg_core):
     assert jedi_support.available() is False
     assert jedi_support.infer_at(pkg_core, "x = 1\n", 1, 0) == []
     assert jedi_support.references(pkg_core, "x = 1\n", 1, 0) == []
-    # tools still work without the semantic section
+    # Tools still work - and say plainly that they did not check, rather than
+    # dropping the section and letting the gap read as a clean result.
     out = find_node_at_position(pkg_core, 1, 0)
-    assert "semantic resolution (jedi)" not in out
+    assert "jedi is not installed" in out
     out = find_usages(pkg_core, "normalize")
-    assert "cross-file references via jedi" not in out
+    assert "jedi is not installed" in out
+    assert "NOT checked" in out
     assert "usages of 'normalize'" in out
+
+
+def test_absent_jedi_does_not_look_like_a_clean_result(monkeypatch, tmp_path):
+    """The defect that gated this package's publish.
+
+    With the section merely omitted, "jedi is not installed" and "no other file
+    references this symbol" produced byte-for-byte identical output, so an agent
+    reading it concluded a symbol was unused when nothing had been checked. The
+    two states must be distinguishable in the text itself.
+    """
+    (tmp_path / ".git").mkdir()
+    module = tmp_path / "m.py"
+    module.write_text("def only_here():\n    return 1\n\nonly_here()\n")
+
+    checked_and_empty = find_usages(str(module), "only_here")
+    monkeypatch.setattr(jedi_support, "_jedi", None)
+    never_checked = find_usages(str(module), "only_here")
+
+    assert checked_and_empty != never_checked
+    assert "no other file in the project references this symbol" in checked_and_empty
+    assert "jedi is not installed" in never_checked
+
+
+def test_resolution_that_finds_nothing_says_so(pkg_core):
+    """A position jedi cannot resolve must report that, not fall silent."""
+    out = find_node_at_position(pkg_core, 1, 0)
+    assert "semantic resolution (jedi)" in out
 
 
 def test_infer_at_survives_bad_input(pkg_core):
