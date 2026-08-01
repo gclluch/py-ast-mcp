@@ -73,3 +73,21 @@ def old_version() -> str:
 @pytest.fixture
 def new_version() -> str:
     return str(FIXTURES / "new_version.py")
+
+
+@pytest.fixture
+def dataclasses_bad() -> str:
+    """Dataclass field defaults; the reported ones are import-time ValueErrors."""
+    return str(FIXTURES / "dataclasses_bad.py")
+
+
+@pytest.fixture
+def matching() -> str:
+    """`match` shapes, scored against radon itself."""
+    return str(FIXTURES / "matching.py")
+
+
+@pytest.fixture
+def hazards() -> str:
+    """Hazards the first pass of find_errors stayed silent about."""
+    return str(FIXTURES / "hazards.py")
