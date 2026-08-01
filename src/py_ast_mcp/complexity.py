@@ -44,6 +44,25 @@ _TRY_NODES = tuple(
 )
 
 
+def _counted_cases(node: ast.Match) -> int:
+    """`match` arms that are decision points.
+
+    An irrefutable arm - `case _:`, or any bare capture such as `case other:` -
+    always matches, so it is the fall-through, exactly like `else` or a switch
+    `default`. It is not an independent path and must not be counted, or every
+    `match` scores one higher than `radon`, against which these scores are
+    advertised as exact.
+
+    Mirrors radon's own rule, including its blind spot: radon subtracts at most
+    one such arm and does not check for a guard, so `case _ if cond:` - which
+    can in fact fail - is still treated as the default.
+    """
+    has_default = any(
+        getattr(case.pattern, "pattern", False) is None for case in node.cases
+    )
+    return max(0, len(node.cases) - has_default)
+
+
 def complexity_of(node: ast.AST, skip_nested_defs: bool = False) -> ComplexityResult:
     """Cyclomatic complexity of a function/class/module subtree.
 
@@ -110,7 +129,9 @@ def complexity_of(node: ast.AST, skip_nested_defs: bool = False) -> ComplexityRe
                     bump("comprehension if", len(gen.ifs))
                 nested = depth + 1
             elif hasattr(ast, "Match") and isinstance(child, ast.Match):
-                bump("match case", len(child.cases))
+                arms = _counted_cases(child)
+                if arms:
+                    bump("match case", arms)
                 nested = depth + 1
             walk(child, nested)
 
