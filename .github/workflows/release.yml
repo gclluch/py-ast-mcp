@@ -1,0 +1,51 @@
+name: release
+
+# Publishes to PyPI on a version tag, via a trusted publisher (OIDC).
+# There is no API token anywhere in this repo or its secrets: PyPI verifies the
+# workflow's identity claim directly. That is why `id-token: write` below is
+# load-bearing - without it the OIDC token is never minted and the upload fails.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The tag is what users will `pip install`, so it must agree with the
+      # version the package actually declares. Catching a mismatch here beats
+      # publishing an immutable, wrongly-numbered release - PyPI does not allow
+      # re-uploading a version.
+      - name: tag matches the declared version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "tag=$tag declared=$declared"
+          test "$tag" = "$declared" || { echo "::error::tag $tag != pyproject version $declared"; exit 1; }
+
+      - run: pip install build
+      - run: python -m build
+      - run: pipx run twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for trusted publishing; nothing else needs write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
