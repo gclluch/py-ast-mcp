@@ -195,8 +195,10 @@ def find_usages(path: str, identifier: str, context: int = 1) -> str:
     """Find every occurrence of an identifier with surrounding source lines.
 
     Covers reads, assignments, parameters, attribute access, imports and
-    global/nonlocal declarations. Adds project-wide references when `jedi` is
-    installed.
+    global/nonlocal declarations. Always reports a project-wide references
+    section: either the cross-file hits, or that there are none, or that `jedi`
+    is not installed and cross-file references were therefore not checked. An
+    empty result and an unchecked one are not the same answer.
 
     Args:
         path: Path to a .py file.

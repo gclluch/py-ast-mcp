@@ -111,12 +111,27 @@ def find_usages(path: str, identifier: str, context: int = 1) -> str:
 
     from . import jedi_support
 
-    if jedi_support.available() and usages:
-        first = usages[0]
-        cross = jedi_support.references(pm.path, pm.source, first.lineno, first.col)
-        if cross:
-            out.append(section(f"cross-file references via jedi ({len(cross)})"))
-            out.extend(bullet(c) for c in cross[:40])
-            if len(cross) > 40:
-                out.append(bullet(f"... {len(cross) - 40} more"))
+    # Say which of the two happened. Omitting the section made "jedi is not
+    # installed" and "no other file references this" byte-for-byte identical,
+    # so an unchecked symbol read as a checked-and-clean one. `None` means not
+    # checked; `[]` means checked and empty.
+    first = usages[0]
+    cross = (
+        jedi_support.references(pm.path, pm.source, first.lineno, first.col)
+        if jedi_support.available()
+        else None
+    )
+    if cross is None:
+        out.append(section("cross-file references via jedi"))
+        out.append(
+            bullet("jedi is not installed - cross-file references were NOT checked")
+        )
+    elif not cross:
+        out.append(section("cross-file references via jedi (0)"))
+        out.append(bullet("none - no other file in the project references this symbol"))
+    else:
+        out.append(section(f"cross-file references via jedi ({len(cross)})"))
+        out.extend(bullet(c) for c in cross[:40])
+        if len(cross) > 40:
+            out.append(bullet(f"... {len(cross) - 40} more"))
     return "\n".join(out)
