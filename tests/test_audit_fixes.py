@@ -252,3 +252,20 @@ def test_unknown_exception_names_are_left_alone(tmp_path):
         "        pass\n"
     )
     assert not kinds(collect_errors(parse_file(str(f))), "unreachable-except")
+
+
+# --- the version the package reports must be the version it is -------------
+
+
+def test_reported_version_matches_pyproject():
+    """0.2.0 shipped to PyPI reporting `__version__ == "0.1.0"`.
+
+    The literal in `__init__.py` was never bumped by the release. It reads from
+    installed metadata now, so this asserts the two cannot diverge again.
+    """
+    import tomllib
+
+    import py_ast_mcp
+
+    declared = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+    assert py_ast_mcp.__version__ == declared
