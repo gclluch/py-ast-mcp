@@ -262,10 +262,19 @@ def test_reported_version_matches_pyproject():
 
     The literal in `__init__.py` was never bumped by the release. It reads from
     installed metadata now, so this asserts the two cannot diverge again.
+
+    Read with a regex, not `tomllib`: that is 3.11+ and this package supports
+    3.10, where an `importorskip` would leave the oldest supported interpreter
+    silently unchecked.
     """
-    import tomllib
+    import re
+    from pathlib import Path
 
     import py_ast_mcp
 
-    declared = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
-    assert py_ast_mcp.__version__ == declared
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    match = re.search(
+        r'^version\s*=\s*"([^"]+)"', pyproject.read_text(), flags=re.MULTILINE
+    )
+    assert match, "no version in pyproject.toml"
+    assert py_ast_mcp.__version__ == match.group(1)
